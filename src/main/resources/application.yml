@@ -1,0 +1,11 @@
+spring:
+    application:
+        name: auto-investor
+    datasource:
+        driver-class-name: org.sqlite.JDBC
+        url: jdbc:sqlite:src/main/resources/auto-investor.db
+
+mybatis:
+    mapper-locations: classpath:mapper/**/*.xml
+    configuration:
+        map-underscore-to-camel-case: false
