@@ -23,9 +23,12 @@ public class TradingLifecycleService {
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
     private final PilotMapper pilotMapper;
+    private final DynamicBudgetAllocationService budgetAllocationService;
 
-    public TradingLifecycleService(PilotMapper pilotMapper) {
+    public TradingLifecycleService(PilotMapper pilotMapper,
+                                   DynamicBudgetAllocationService budgetAllocationService) {
         this.pilotMapper = pilotMapper;
+        this.budgetAllocationService = budgetAllocationService;
     }
 
     public void logInitialPurchase(String systemType,
@@ -73,6 +76,10 @@ public class TradingLifecycleService {
 
     @Transactional
     public void rotateStatuses() {
+        ensurePanicStopInactive();
+        assertLifecycleIntegrity();
+        assertActiveBudgetIntegrity();
+
         List<TradingLifecycleTarget> targets = pilotMapper.selectLifecycleTargetsWithLatestTicks();
         if (targets == null || targets.isEmpty()) {
             logger.warn("status rotation skipped: linked market data or active tracker is empty");
@@ -91,6 +98,10 @@ public class TradingLifecycleService {
 
     @Transactional
     public void liquidateBlackAtMarketStart() {
+        ensurePanicStopInactive();
+        assertLifecycleIntegrity();
+        assertActiveBudgetIntegrity();
+
         List<TradingLifecycleTarget> targets = pilotMapper.selectBlackLifecycleTargetsWithLatestTicks();
         if (targets == null || targets.isEmpty()) {
             logger.warn("market start liquidation skipped: BLACK tracker with linked market data is empty");
@@ -101,23 +112,6 @@ public class TradingLifecycleService {
         for (TradingLifecycleTarget target : targets) {
             if (!isValidTarget(target)) {
                 logger.warn("black liquidation skipped invalid target: symbol={}", target == null ? null : target.getSymbol());
-                continue;
-            }
-            if (hasIntegrityMismatch(target)) {
-                String reason = integrityMismatchReason(target);
-                pilotMapper.markActiveStatusBadSector(target.getId(), soldAt, reason);
-                pilotMapper.insertTradingStatusHistoryLog(
-                        target.getId(),
-                        target.getMasterId(),
-                        target.getSystemType(),
-                        target.getSymbol(),
-                        target.getStatus(),
-                        "BAD_SECTOR",
-                        "INTEGRITY_CHECK",
-                        reason,
-                        forceFlag(target),
-                        soldAt
-                );
                 continue;
             }
             BigDecimal pnlRatio = target.getLastPrice()
@@ -151,6 +145,7 @@ public class TradingLifecycleService {
             } else if ("AUTOBOT".equalsIgnoreCase(target.getSystemType())) {
                 pilotMapper.closeAutobotHolding(target.getSymbol(), soldAt);
             }
+            budgetAllocationService.calculate(target.getMarketCurrency());
             pilotMapper.deleteActiveStatusTracker(target.getId());
         }
     }
@@ -160,24 +155,6 @@ public class TradingLifecycleService {
                 .subtract(target.getEntryPrice())
                 .divide(target.getEntryPrice(), 8, RoundingMode.HALF_UP);
         BigDecimal absoluteRatio = ratio.abs();
-
-        if (hasIntegrityMismatch(target)) {
-            String reason = integrityMismatchReason(target);
-            pilotMapper.markActiveStatusBadSector(target.getId(), rotatedAt, reason);
-            pilotMapper.insertTradingStatusHistoryLog(
-                    target.getId(),
-                    target.getMasterId(),
-                    target.getSystemType(),
-                    target.getSymbol(),
-                    target.getStatus(),
-                    "BAD_SECTOR",
-                    "INTEGRITY_CHECK",
-                    reason,
-                    forceFlag(target),
-                    rotatedAt
-            );
-            return;
-        }
 
         if (absoluteRatio.compareTo(TEN_PERCENT) >= 0) {
             transition(target, "BLACK", rotatedAt, target.getGrayEnteredAt(), "Y", rotatedAt,
@@ -275,27 +252,49 @@ public class TradingLifecycleService {
         return value != null && !value.isBlank();
     }
 
-    private boolean hasIntegrityMismatch(TradingLifecycleTarget target) {
-        return target.getMasterId() == null
-                || !hasText(target.getMasterStatus())
-                || !"OPEN".equals(target.getMasterStatus())
-                || hasText(target.getMasterSellTime());
+    private void ensurePanicStopInactive() {
+        if (pilotMapper.countActivePanicStop() > 0) {
+            throw new IllegalStateException("panic stop is active. trading lifecycle batch halted");
+        }
     }
 
-    private String integrityMismatchReason(TradingLifecycleTarget target) {
-        if (target.getMasterId() == null) {
-            return "MASTER_RECORD_NOT_FOUND";
+    private void assertLifecycleIntegrity() {
+        List<TradingLifecycleTarget> mismatches = pilotMapper.selectLifecycleIntegrityMismatches();
+        if (mismatches == null || mismatches.isEmpty()) {
+            return;
         }
-        if (!hasText(target.getMasterStatus())) {
-            return "MASTER_STATUS_EMPTY";
+
+        String checkedAt = now();
+        for (TradingLifecycleTarget mismatch : mismatches) {
+            String detail = integrityMismatchDetail(mismatch);
+            pilotMapper.insertPanicStopEvent("TRACKER_MASTER_INTEGRITY_MISMATCH", detail, checkedAt);
+            logger.error("panic stop activated: {}", detail);
         }
-        if (!"OPEN".equals(target.getMasterStatus())) {
-            return "MASTER_STATUS_NOT_OPEN_" + target.getMasterStatus();
+
+        throw new IllegalStateException("panic stop activated by tracker/master integrity mismatch count=" + mismatches.size());
+    }
+
+    private void assertActiveBudgetIntegrity() {
+        List<String> marketCurrencies = pilotMapper.selectActiveBudgetCurrencies();
+        if (marketCurrencies == null || marketCurrencies.isEmpty()) {
+            return;
         }
-        if (hasText(target.getMasterSellTime())) {
-            return "MASTER_ALREADY_HAS_SELL_TIME";
+        for (String marketCurrency : marketCurrencies) {
+            budgetAllocationService.assertBudgetIntegrity(marketCurrency);
         }
-        return "TRACKER_MASTER_STATE_MISMATCH";
+    }
+
+    private String integrityMismatchDetail(TradingLifecycleTarget target) {
+        if (target == null) {
+            return "target=null";
+        }
+        return "systemType=" + target.getSystemType()
+                + ", symbol=" + target.getSymbol()
+                + ", trackerId=" + target.getId()
+                + ", masterId=" + target.getMasterId()
+                + ", trackerStatus=" + target.getStatus()
+                + ", masterStatus=" + target.getMasterStatus()
+                + ", masterSellTime=" + target.getMasterSellTime();
     }
 
     private String forceFlag(TradingLifecycleTarget target) {

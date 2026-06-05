@@ -16,3 +16,15 @@ pilot:
     lifecycle:
         rotation-fixed-delay-ms: ${PILOT_LIFECYCLE_ROTATION_FIXED_DELAY_MS:300000}
         market-start-cron: ${PILOT_MARKET_START_CRON:0 0 9 * * MON-FRI}
+
+budget:
+    pilot-allocation-ratio: ${PILOT_ALLOCATION_RATIO:0.10}
+    total-wallet-balance:
+        krw: ${TOTAL_WALLET_BALANCE_KRW:0}
+        usd: ${TOTAL_WALLET_BALANCE_USD:0}
+    minimum-pilot-budget:
+        krw: ${MINIMUM_PILOT_BUDGET_KRW:100000}
+        usd: ${MINIMUM_PILOT_BUDGET_USD:0}
+    minimum-operating-balance:
+        krw: ${MINIMUM_OPERATING_BALANCE_KRW:100000}
+        usd: ${MINIMUM_OPERATING_BALANCE_USD:0}

@@ -17,6 +17,29 @@ public interface PilotMapper {
 
     int countGlobalHeldSymbol(@Param("symbol") String symbol);
 
+    int countActivePanicStop();
+
+    List<TradingLifecycleTarget> selectLifecycleIntegrityMismatches();
+
+    void insertPanicStopEvent(@Param("reason") String reason,
+                              @Param("detail") String detail,
+                              @Param("createdAt") String createdAt);
+
+    String sumOpenBuyAmountBySystemType(@Param("systemType") String systemType,
+                                        @Param("marketCurrency") String marketCurrency);
+
+    List<String> selectActiveBudgetCurrencies();
+
+    void insertBudgetAllocationSnapshot(@Param("marketCurrency") String marketCurrency,
+                                        @Param("totalWalletBalance") String totalWalletBalance,
+                                        @Param("pilotBudget") String pilotBudget,
+                                        @Param("autobotBudget") String autobotBudget,
+                                        @Param("pilotUsedAmount") String pilotUsedAmount,
+                                        @Param("autobotUsedAmount") String autobotUsedAmount,
+                                        @Param("pilotAvailableAmount") String pilotAvailableAmount,
+                                        @Param("autobotAvailableAmount") String autobotAvailableAmount,
+                                        @Param("calculatedAt") String calculatedAt);
+
     void insertOpenPosition(PilotPosition position);
 
     void insertPilotBalance(PilotPosition position);
@@ -109,10 +132,6 @@ public interface PilotMapper {
                             @Param("grayEnteredAt") String grayEnteredAt,
                             @Param("forceLiquidationFlag") String forceLiquidationFlag,
                             @Param("updatedAt") String updatedAt);
-
-    void markActiveStatusBadSector(@Param("id") Long id,
-                                   @Param("updatedAt") String updatedAt,
-                                   @Param("reason") String reason);
 
     void updateTradingHistorySell(@Param("systemType") String systemType,
                                   @Param("masterId") Long masterId,

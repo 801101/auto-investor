@@ -17,13 +17,16 @@ public class AutobotExecutionService {
     private final GlobalSymbolLockService globalSymbolLockService;
     private final PilotMapper pilotMapper;
     private final TradingLifecycleService tradingLifecycleService;
+    private final DynamicBudgetAllocationService budgetAllocationService;
 
     public AutobotExecutionService(GlobalSymbolLockService globalSymbolLockService,
                                    PilotMapper pilotMapper,
-                                   TradingLifecycleService tradingLifecycleService) {
+                                   TradingLifecycleService tradingLifecycleService,
+                                   DynamicBudgetAllocationService budgetAllocationService) {
         this.globalSymbolLockService = globalSymbolLockService;
         this.pilotMapper = pilotMapper;
         this.tradingLifecycleService = tradingLifecycleService;
+        this.budgetAllocationService = budgetAllocationService;
     }
 
     @Transactional
@@ -31,6 +34,10 @@ public class AutobotExecutionService {
                                                        String marketCurrency,
                                                        BigDecimal referencePrice,
                                                        String requestedGrade) {
+        if (pilotMapper.countActivePanicStop() > 0) {
+            return OrderPipelineResult.rejected("panic stop is active");
+        }
+
         if (!hasText(symbol) || !hasText(marketCurrency) || referencePrice == null || referencePrice.signum() <= 0) {
             return OrderPipelineResult.rejected("linked order data validation failed");
         }
@@ -43,6 +50,11 @@ public class AutobotExecutionService {
 
         if (globalSymbolLockService.isLocked(symbol)) {
             return OrderPipelineResult.rejected("global single-symbol lock is active: " + symbol);
+        }
+
+        BigDecimal orderAmount = referencePrice.multiply(ONE_SHARE);
+        if (!budgetAllocationService.canAllocateAutobot(marketCurrency, orderAmount)) {
+            return OrderPipelineResult.rejected("autobot budget is not available for one-share order: " + symbol);
         }
 
         String createdAt = OffsetDateTime.now().format(TIME_FORMATTER);
@@ -71,7 +83,7 @@ public class AutobotExecutionService {
                 marketCurrency,
                 referencePrice,
                 ONE_SHARE,
-                referencePrice,
+                orderAmount,
                 createdAt
         );
 

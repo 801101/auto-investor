@@ -74,6 +74,130 @@
             )
     </select>
 
+    <select id="countActivePanicStop" resultType="int">
+        SELECT COUNT(*)
+        FROM panic_stop_events
+        WHERE active = 'Y'
+    </select>
+
+    <select id="selectLifecycleIntegrityMismatches" resultType="com.won.autoinvestor.pilot.domain.TradingLifecycleTarget">
+        SELECT
+            tracker.id,
+            tracker.trading_history_master_id AS masterId,
+            tracker.system_type AS systemType,
+            tracker.symbol,
+            tracker.market_currency AS marketCurrency,
+            tracker.entry_price AS entryPrice,
+            tracker.entry_quantity AS entryQuantity,
+            tracker.entry_amount AS entryAmount,
+            tracker.entry_time AS entryTime,
+            tracker.status,
+            tracker.status_entered_at AS statusEnteredAt,
+            tracker.gray_entered_at AS grayEnteredAt,
+            tracker.force_liquidation_flag AS forceLiquidationFlag,
+            tracker.updated_at AS updatedAt,
+            master.status AS masterStatus,
+            master.sell_time AS masterSellTime,
+            NULL AS lastPrice,
+            NULL AS tradedAt
+        FROM active_status_tracker tracker
+        LEFT JOIN trading_history_master master
+            ON master.id = tracker.trading_history_master_id
+        WHERE tracker.status IN ('WHITE', 'GRAY', 'BLACK')
+          AND (
+              tracker.trading_history_master_id IS NULL
+              OR master.id IS NULL
+              OR master.status != 'OPEN'
+              OR master.sell_time IS NOT NULL
+          )
+        UNION ALL
+        SELECT
+            NULL AS id,
+            master.id AS masterId,
+            master.system_type AS systemType,
+            master.symbol,
+            master.market_currency AS marketCurrency,
+            master.buy_price AS entryPrice,
+            master.buy_quantity AS entryQuantity,
+            master.buy_amount AS entryAmount,
+            master.buy_time AS entryTime,
+            'MISSING_TRACKER' AS status,
+            master.updated_at AS statusEnteredAt,
+            NULL AS grayEnteredAt,
+            master.force_liquidation_flag AS forceLiquidationFlag,
+            master.updated_at AS updatedAt,
+            master.status AS masterStatus,
+            master.sell_time AS masterSellTime,
+            NULL AS lastPrice,
+            NULL AS tradedAt
+        FROM trading_history_master master
+        LEFT JOIN active_status_tracker tracker
+            ON tracker.trading_history_master_id = master.id
+           AND tracker.status IN ('WHITE', 'GRAY', 'BLACK')
+        WHERE master.status = 'OPEN'
+          AND tracker.id IS NULL
+        ORDER BY systemType, symbol, masterId
+    </select>
+
+    <insert id="insertPanicStopEvent">
+        INSERT INTO panic_stop_events (
+            reason,
+            detail,
+            alert_status,
+            active,
+            created_at
+        ) VALUES (
+            #{reason},
+            #{detail},
+            'ALERT_REQUIRED',
+            'Y',
+            #{createdAt}
+        )
+    </insert>
+
+    <select id="sumOpenBuyAmountBySystemType" resultType="string">
+        SELECT COALESCE(SUM(CAST(buy_amount AS REAL)), 0)
+        FROM trading_history_master
+        WHERE system_type = #{systemType}
+          AND market_currency = #{marketCurrency}
+          AND status = 'OPEN'
+          AND sell_time IS NULL
+    </select>
+
+    <select id="selectActiveBudgetCurrencies" resultType="string">
+        SELECT DISTINCT market_currency
+        FROM trading_history_master
+        WHERE status = 'OPEN'
+        UNION
+        SELECT DISTINCT market_currency
+        FROM active_status_tracker
+        WHERE status IN ('WHITE', 'GRAY', 'BLACK')
+    </select>
+
+    <insert id="insertBudgetAllocationSnapshot">
+        INSERT INTO budget_allocation_snapshots (
+            market_currency,
+            total_wallet_balance,
+            pilot_budget,
+            autobot_budget,
+            pilot_used_amount,
+            autobot_used_amount,
+            pilot_available_amount,
+            autobot_available_amount,
+            calculated_at
+        ) VALUES (
+            #{marketCurrency},
+            #{totalWalletBalance},
+            #{pilotBudget},
+            #{autobotBudget},
+            #{pilotUsedAmount},
+            #{autobotUsedAmount},
+            #{pilotAvailableAmount},
+            #{autobotAvailableAmount},
+            #{calculatedAt}
+        )
+    </insert>
+
     <insert id="insertOpenPosition">
         INSERT INTO pilot_positions (
             symbol,
@@ -445,15 +569,6 @@
             status_entered_at = #{statusEnteredAt},
             gray_entered_at = #{grayEnteredAt},
             force_liquidation_flag = #{forceLiquidationFlag},
-            updated_at = #{updatedAt}
-        WHERE id = #{id}
-    </update>
-
-    <update id="markActiveStatusBadSector">
-        UPDATE active_status_tracker
-        SET status = 'BAD_SECTOR',
-            isolated_at = #{updatedAt},
-            isolation_reason = #{reason},
             updated_at = #{updatedAt}
         WHERE id = #{id}
     </update>

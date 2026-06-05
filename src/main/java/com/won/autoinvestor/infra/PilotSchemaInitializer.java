@@ -264,6 +264,39 @@ public class PilotSchemaInitializer {
                         created_at TEXT NOT NULL
                     )
                     """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS panic_stop_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        reason TEXT NOT NULL,
+                        detail TEXT NOT NULL,
+                        alert_status TEXT NOT NULL,
+                        active TEXT NOT NULL DEFAULT 'Y',
+                        created_at TEXT NOT NULL,
+                        resolved_at TEXT
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_panic_stop_events_active
+                    ON panic_stop_events(active, created_at DESC, id DESC)
+                    """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS budget_allocation_snapshots (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        market_currency TEXT NOT NULL,
+                        total_wallet_balance TEXT NOT NULL,
+                        pilot_budget TEXT NOT NULL,
+                        autobot_budget TEXT NOT NULL,
+                        pilot_used_amount TEXT NOT NULL,
+                        autobot_used_amount TEXT NOT NULL,
+                        pilot_available_amount TEXT NOT NULL,
+                        autobot_available_amount TEXT NOT NULL,
+                        calculated_at TEXT NOT NULL
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_budget_allocation_snapshots_latest
+                    ON budget_allocation_snapshots(market_currency, calculated_at DESC, id DESC)
+                    """);
         }
 
         logger.info("pilot schema initialized");

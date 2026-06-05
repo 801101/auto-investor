@@ -27,19 +27,27 @@ public class PilotCycleService {
     private final PilotMapper pilotMapper;
     private final GlobalSymbolLockService globalSymbolLockService;
     private final TradingLifecycleService tradingLifecycleService;
+    private final DynamicBudgetAllocationService budgetAllocationService;
 
     public PilotCycleService(PilotMarketDataClient marketDataClient,
                              PilotMapper pilotMapper,
                              GlobalSymbolLockService globalSymbolLockService,
-                             TradingLifecycleService tradingLifecycleService) {
+                             TradingLifecycleService tradingLifecycleService,
+                             DynamicBudgetAllocationService budgetAllocationService) {
         this.marketDataClient = marketDataClient;
         this.pilotMapper = pilotMapper;
         this.globalSymbolLockService = globalSymbolLockService;
         this.tradingLifecycleService = tradingLifecycleService;
+        this.budgetAllocationService = budgetAllocationService;
     }
 
     @Transactional
     public void runCycle() {
+        if (pilotMapper.countActivePanicStop() > 0) {
+            logger.error("pilot cycle halted: panic stop is active");
+            return;
+        }
+
         List<PilotMarketTick> marketTicks = marketDataClient.pollLinkedMarketTicks();
         if (marketTicks == null || marketTicks.isEmpty()) {
             logger.warn("pilot cycle skipped: linked market data is empty");
@@ -125,6 +133,22 @@ public class PilotCycleService {
 
         BigDecimal orderAmount = minimumOrderAmount(tick.getMarketCurrency());
         BigDecimal referencePrice = referencePrice(tick);
+        if (!budgetAllocationService.canAllocatePilot(tick.getMarketCurrency(), orderAmount)) {
+            logger.warn("pilot entry rejected by budget allocation: symbol={}, currency={}, orderAmount={}",
+                    tick.getSymbol(), tick.getMarketCurrency(), orderAmount);
+            pilotMapper.insertMarketObservationData(
+                    tick.getSymbol(),
+                    tick.getMarketCurrency(),
+                    "LINKED_TICK_VALID",
+                    "PILOT_BUDGET_REJECTED",
+                    "진입거부",
+                    0L,
+                    grade,
+                    observedAt
+            );
+            return;
+        }
+
         BigDecimal orderQuantity = orderAmount.divide(referencePrice, 16, RoundingMode.DOWN);
 
         PilotPosition position = new PilotPosition();
