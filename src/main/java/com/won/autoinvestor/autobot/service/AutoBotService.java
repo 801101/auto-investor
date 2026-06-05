@@ -28,7 +28,7 @@ public class AutoBotService {
             throw new BizException(ErrorCode.NO_DATA);
         }
 
-        String message = list.getFirst().get("message");
+        String message = list.get(0).get("message");
         logger.info("getHelloMessage success: {}", message);
 
         return message;

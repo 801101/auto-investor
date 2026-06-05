@@ -1,0 +1,575 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.won.autoinvestor.pilot.mapper.PilotMapper">
+
+    <select id="selectLatestMarketTicks" resultType="com.won.autoinvestor.pilot.domain.PilotMarketTick">
+        SELECT
+            t.id,
+            t.symbol,
+            t.market_currency AS marketCurrency,
+            t.last_price AS lastPrice,
+            t.bid_price AS bidPrice,
+            t.ask_price AS askPrice,
+            t.traded_at AS tradedAt,
+            t.received_at AS receivedAt
+        FROM pilot_market_ticks t
+        INNER JOIN (
+            SELECT symbol, MAX(id) AS id
+            FROM pilot_market_ticks
+            GROUP BY symbol
+        ) latest
+            ON latest.id = t.id
+        ORDER BY t.symbol
+    </select>
+
+    <select id="selectOpenPositionBySymbol" resultType="com.won.autoinvestor.pilot.domain.PilotPosition">
+        SELECT
+            id,
+            symbol,
+            market_currency AS marketCurrency,
+            quantity,
+            invested_amount AS investedAmount,
+            average_entry_price AS averageEntryPrice,
+            status,
+            opened_at AS openedAt,
+            updated_at AS updatedAt,
+            closed_at AS closedAt
+        FROM pilot_positions
+        WHERE symbol = #{symbol}
+          AND status = 'OPEN'
+        LIMIT 1
+    </select>
+
+    <select id="countGlobalHeldSymbol" resultType="int">
+        SELECT
+            (
+                SELECT COUNT(*)
+                FROM pilot_positions
+                WHERE symbol = #{symbol}
+                  AND status = 'OPEN'
+            )
+            +
+            (
+                SELECT COUNT(*)
+                FROM active_status_tracker
+                WHERE symbol = #{symbol}
+                  AND status IN ('WHITE', 'GRAY', 'BLACK')
+            )
+            +
+            (
+                SELECT COUNT(*)
+                FROM "파일럿_잔고"
+                WHERE "종목" = #{symbol}
+                  AND "상태" = '보유'
+            )
+            +
+            (
+                SELECT COUNT(*)
+                FROM "오토봇_잔고"
+                WHERE "종목" = #{symbol}
+                  AND "상태" = '보유'
+            )
+    </select>
+
+    <insert id="insertOpenPosition">
+        INSERT INTO pilot_positions (
+            symbol,
+            market_currency,
+            quantity,
+            invested_amount,
+            average_entry_price,
+            status,
+            opened_at,
+            updated_at
+        ) VALUES (
+            #{symbol},
+            #{marketCurrency},
+            #{quantity},
+            #{investedAmount},
+            #{averageEntryPrice},
+            #{status},
+            #{openedAt},
+            #{updatedAt}
+        )
+    </insert>
+
+    <insert id="insertPilotBalance">
+        INSERT INTO "파일럿_잔고" (
+            "종목",
+            "통화",
+            "수량",
+            "투입금액",
+            "평균진입가",
+            "상태",
+            "진입시각",
+            "갱신시각"
+        ) VALUES (
+            #{symbol},
+            #{marketCurrency},
+            #{quantity},
+            #{investedAmount},
+            #{averageEntryPrice},
+            '보유',
+            #{openedAt},
+            #{updatedAt}
+        )
+    </insert>
+
+    <update id="touchOpenPosition">
+        UPDATE pilot_positions
+        SET updated_at = #{updatedAt}
+        WHERE id = #{id}
+          AND status = 'OPEN'
+    </update>
+
+    <update id="touchPilotBalance">
+        UPDATE "파일럿_잔고"
+        SET "갱신시각" = #{updatedAt}
+        WHERE "종목" = #{symbol}
+          AND "상태" = '보유'
+    </update>
+
+    <insert id="insertOrderIntent">
+        INSERT INTO pilot_order_intents (
+            symbol,
+            market_currency,
+            side,
+            order_amount,
+            order_quantity,
+            reference_price,
+            reason,
+            status,
+            created_at
+        ) VALUES (
+            #{symbol},
+            #{marketCurrency},
+            #{side},
+            #{orderAmount},
+            #{orderQuantity},
+            #{referencePrice},
+            #{reason},
+            #{status},
+            #{createdAt}
+        )
+    </insert>
+
+    <insert id="insertObservation">
+        INSERT INTO pilot_observations (
+            symbol,
+            market_currency,
+            market_state,
+            entry_pattern,
+            position_status,
+            survival_seconds,
+            observed_at
+        ) VALUES (
+            #{symbol},
+            #{marketCurrency},
+            #{marketState},
+            #{entryPattern},
+            #{positionStatus},
+            #{survivalSeconds},
+            #{observedAt}
+        )
+    </insert>
+
+    <insert id="insertMarketObservationData">
+        INSERT INTO "시장_관측_데이터" (
+            "종목",
+            "통화",
+            "시장상태",
+            "진입패턴",
+            "포지션상태",
+            "생존초",
+            "등급",
+            "관측시각"
+        ) VALUES (
+            #{symbol},
+            #{marketCurrency},
+            #{marketState},
+            #{entryPattern},
+            #{positionStatus},
+            #{survivalSeconds},
+            #{grade},
+            #{observedAt}
+        )
+    </insert>
+
+    <select id="selectLatestAssetGrade" resultType="string">
+        SELECT grade
+        FROM asset_grade_decisions
+        WHERE symbol = #{symbol}
+        ORDER BY decided_at DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <insert id="insertAssetGradeDecision">
+        INSERT INTO asset_grade_decisions (
+            symbol,
+            grade,
+            reason,
+            decided_at
+        ) VALUES (
+            #{symbol},
+            #{grade},
+            #{reason},
+            #{decidedAt}
+        )
+    </insert>
+
+    <insert id="insertAutobotBalance">
+        INSERT INTO "오토봇_잔고" (
+            "종목",
+            "통화",
+            "수량",
+            "평균진입가",
+            "상태",
+            "등급",
+            "진입시각",
+            "갱신시각"
+        ) VALUES (
+            #{symbol},
+            #{marketCurrency},
+            #{quantity},
+            #{averageEntryPrice},
+            '보유',
+            #{grade},
+            #{createdAt},
+            #{createdAt}
+        )
+    </insert>
+
+    <insert id="insertAutobotOrderIntent">
+        INSERT INTO autobot_order_intents (
+            symbol,
+            market_currency,
+            side,
+            share_quantity,
+            reference_price,
+            asset_grade,
+            reason,
+            status,
+            created_at
+        ) VALUES (
+            #{symbol},
+            #{marketCurrency},
+            #{side},
+            #{shareQuantity},
+            #{referencePrice},
+            #{assetGrade},
+            #{reason},
+            #{status},
+            #{createdAt}
+        )
+    </insert>
+
+    <insert id="insertTradingHistoryMaster">
+        INSERT INTO trading_history_master (
+            system_type,
+            symbol,
+            market_currency,
+            buy_price,
+            buy_quantity,
+            buy_amount,
+            buy_time,
+            sell_price,
+            sell_time,
+            pnl_ratio,
+            status,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{systemType},
+            #{symbol},
+            #{marketCurrency},
+            #{buyPrice},
+            #{buyQuantity},
+            #{buyAmount},
+            #{buyTime},
+            NULL,
+            NULL,
+            NULL,
+            'OPEN',
+            #{createdAt},
+            #{createdAt}
+        )
+    </insert>
+
+    <insert id="insertActiveStatusTracker">
+        INSERT INTO active_status_tracker (
+            trading_history_master_id,
+            system_type,
+            symbol,
+            market_currency,
+            entry_price,
+            entry_quantity,
+            entry_amount,
+            entry_time,
+            status,
+            status_entered_at,
+            gray_entered_at,
+            force_liquidation_flag,
+            updated_at
+        ) VALUES (
+            #{masterId},
+            #{systemType},
+            #{symbol},
+            #{marketCurrency},
+            #{entryPrice},
+            #{entryQuantity},
+            #{entryAmount},
+            #{entryTime},
+            'WHITE',
+            #{createdAt},
+            NULL,
+            'N',
+            #{createdAt}
+        )
+    </insert>
+
+    <select id="selectLatestOpenTradingHistoryMasterId" resultType="java.lang.Long">
+        SELECT id
+        FROM trading_history_master
+        WHERE system_type = #{systemType}
+          AND symbol = #{symbol}
+          AND buy_time = #{buyTime}
+          AND status = 'OPEN'
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectLifecycleTargetsWithLatestTicks" resultType="com.won.autoinvestor.pilot.domain.TradingLifecycleTarget">
+        SELECT
+            tracker.id,
+            COALESCE(tracker.trading_history_master_id, master.id) AS masterId,
+            tracker.system_type AS systemType,
+            tracker.symbol,
+            tracker.market_currency AS marketCurrency,
+            tracker.entry_price AS entryPrice,
+            tracker.entry_quantity AS entryQuantity,
+            tracker.entry_amount AS entryAmount,
+            tracker.entry_time AS entryTime,
+            tracker.status,
+            tracker.status_entered_at AS statusEnteredAt,
+            tracker.gray_entered_at AS grayEnteredAt,
+            tracker.force_liquidation_flag AS forceLiquidationFlag,
+            tracker.updated_at AS updatedAt,
+            master.status AS masterStatus,
+            master.sell_time AS masterSellTime,
+            ticks.last_price AS lastPrice,
+            ticks.traded_at AS tradedAt
+        FROM active_status_tracker tracker
+        LEFT JOIN trading_history_master master
+            ON master.id = COALESCE(
+                tracker.trading_history_master_id,
+                (
+                    SELECT fallback.id
+                    FROM trading_history_master fallback
+                    WHERE fallback.system_type = tracker.system_type
+                      AND fallback.symbol = tracker.symbol
+                      AND fallback.status = 'OPEN'
+                    ORDER BY fallback.buy_time ASC, fallback.id ASC
+                    LIMIT 1
+                )
+            )
+        INNER JOIN (
+            SELECT t.symbol, t.last_price, t.traded_at
+            FROM pilot_market_ticks t
+            INNER JOIN (
+                SELECT symbol, MAX(id) AS id
+                FROM pilot_market_ticks
+                GROUP BY symbol
+            ) latest
+                ON latest.id = t.id
+        ) ticks
+            ON ticks.symbol = tracker.symbol
+        WHERE tracker.status IN ('WHITE', 'GRAY', 'BLACK')
+        ORDER BY tracker.system_type, tracker.symbol
+    </select>
+
+    <select id="selectBlackLifecycleTargetsWithLatestTicks" resultType="com.won.autoinvestor.pilot.domain.TradingLifecycleTarget">
+        SELECT
+            tracker.id,
+            COALESCE(tracker.trading_history_master_id, master.id) AS masterId,
+            tracker.system_type AS systemType,
+            tracker.symbol,
+            tracker.market_currency AS marketCurrency,
+            tracker.entry_price AS entryPrice,
+            tracker.entry_quantity AS entryQuantity,
+            tracker.entry_amount AS entryAmount,
+            tracker.entry_time AS entryTime,
+            tracker.status,
+            tracker.status_entered_at AS statusEnteredAt,
+            tracker.gray_entered_at AS grayEnteredAt,
+            tracker.force_liquidation_flag AS forceLiquidationFlag,
+            tracker.updated_at AS updatedAt,
+            master.status AS masterStatus,
+            master.sell_time AS masterSellTime,
+            ticks.last_price AS lastPrice,
+            ticks.traded_at AS tradedAt
+        FROM active_status_tracker tracker
+        LEFT JOIN trading_history_master master
+            ON master.id = COALESCE(
+                tracker.trading_history_master_id,
+                (
+                    SELECT fallback.id
+                    FROM trading_history_master fallback
+                    WHERE fallback.system_type = tracker.system_type
+                      AND fallback.symbol = tracker.symbol
+                      AND fallback.status = 'OPEN'
+                    ORDER BY fallback.buy_time ASC, fallback.id ASC
+                    LIMIT 1
+                )
+            )
+        INNER JOIN (
+            SELECT t.symbol, t.last_price, t.traded_at
+            FROM pilot_market_ticks t
+            INNER JOIN (
+                SELECT symbol, MAX(id) AS id
+                FROM pilot_market_ticks
+                GROUP BY symbol
+            ) latest
+                ON latest.id = t.id
+        ) ticks
+            ON ticks.symbol = tracker.symbol
+        WHERE tracker.status = 'BLACK'
+        ORDER BY tracker.system_type, tracker.symbol
+    </select>
+
+    <update id="updateActiveStatus">
+        UPDATE active_status_tracker
+        SET status = #{status},
+            status_entered_at = #{statusEnteredAt},
+            gray_entered_at = #{grayEnteredAt},
+            force_liquidation_flag = #{forceLiquidationFlag},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="markActiveStatusBadSector">
+        UPDATE active_status_tracker
+        SET status = 'BAD_SECTOR',
+            isolated_at = #{updatedAt},
+            isolation_reason = #{reason},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateTradingHistorySell">
+        UPDATE trading_history_master
+        SET sell_price = #{sellPrice},
+            sell_time = #{sellTime},
+            pnl_ratio = #{pnlRatio},
+            force_liquidation_flag = #{forceLiquidationFlag},
+            integrity_verified_at = #{sellTime},
+            status = 'CLOSED',
+            updated_at = #{sellTime}
+        WHERE id = #{masterId}
+          AND system_type = #{systemType}
+          AND symbol = #{symbol}
+          AND status = 'OPEN'
+          AND sell_price IS NULL
+    </update>
+
+    <insert id="insertTradingStatusHistoryLog">
+        INSERT INTO trading_status_history_log (
+            tracker_id,
+            master_id,
+            system_type,
+            symbol,
+            previous_status,
+            new_status,
+            event_type,
+            reason,
+            force_liquidation_flag,
+            logged_at
+        ) VALUES (
+            #{trackerId},
+            #{masterId},
+            #{systemType},
+            #{symbol},
+            #{previousStatus},
+            #{newStatus},
+            #{eventType},
+            #{reason},
+            #{forceLiquidationFlag},
+            #{loggedAt}
+        )
+    </insert>
+
+    <insert id="insertTrainingDatasetFromMaster">
+        INSERT OR IGNORE INTO trading_training_dataset (
+            master_id,
+            system_type,
+            symbol,
+            market_currency,
+            buy_price,
+            buy_quantity,
+            buy_amount,
+            buy_time,
+            sell_price,
+            sell_time,
+            pnl_ratio,
+            force_liquidation_flag,
+            outcome_status,
+            created_at
+        )
+        SELECT
+            id,
+            system_type,
+            symbol,
+            market_currency,
+            buy_price,
+            buy_quantity,
+            buy_amount,
+            buy_time,
+            sell_price,
+            sell_time,
+            pnl_ratio,
+            force_liquidation_flag,
+            status,
+            #{createdAt}
+        FROM trading_history_master
+        WHERE id = #{masterId}
+          AND status = 'CLOSED'
+          AND sell_price IS NOT NULL
+          AND sell_time IS NOT NULL
+          AND pnl_ratio IS NOT NULL
+    </insert>
+
+    <delete id="deleteActiveStatusTracker">
+        DELETE FROM active_status_tracker
+        WHERE id = #{id}
+    </delete>
+
+    <update id="closePilotHolding">
+        UPDATE pilot_positions
+        SET status = 'CLOSED',
+            closed_at = #{closedAt},
+            updated_at = #{closedAt}
+        WHERE symbol = #{symbol}
+          AND status = 'OPEN'
+    </update>
+
+    <update id="closePilotBalance">
+        UPDATE "파일럿_잔고"
+        SET "상태" = '청산',
+            "청산시각" = #{closedAt},
+            "갱신시각" = #{closedAt}
+        WHERE "종목" = #{symbol}
+          AND "상태" = '보유'
+    </update>
+
+    <update id="closeAutobotHolding">
+        UPDATE "오토봇_잔고"
+        SET "상태" = '청산',
+            "청산시각" = #{closedAt},
+            "갱신시각" = #{closedAt}
+        WHERE "종목" = #{symbol}
+          AND "상태" = '보유'
+    </update>
+
+</mapper>

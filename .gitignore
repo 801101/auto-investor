@@ -2,6 +2,8 @@
 build/
 src/main/resources/*.db
 *.db
+!auto-investor.db
+!src/main/resources/auto-investor.db
 .env
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/

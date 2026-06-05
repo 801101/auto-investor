@@ -3,9 +3,16 @@ spring:
         name: auto-investor
     datasource:
         driver-class-name: org.sqlite.JDBC
-        url: jdbc:sqlite:src/main/resources/auto-investor.db
+        url: ${AUTO_INVESTOR_DB_URL:jdbc:sqlite:./auto-investor.db}
 
 mybatis:
     mapper-locations: classpath:mapper/**/*.xml
     configuration:
         map-underscore-to-camel-case: false
+
+pilot:
+    cycle:
+        fixed-delay-ms: ${PILOT_CYCLE_FIXED_DELAY_MS:30000}
+    lifecycle:
+        rotation-fixed-delay-ms: ${PILOT_LIFECYCLE_ROTATION_FIXED_DELAY_MS:300000}
+        market-start-cron: ${PILOT_MARKET_START_CRON:0 0 9 * * MON-FRI}
