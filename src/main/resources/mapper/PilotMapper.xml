@@ -198,6 +198,84 @@
         )
     </insert>
 
+    <select id="countActivePositionByStockCode" resultType="int">
+        SELECT COUNT(*)
+        FROM positions
+        WHERE stock_code = #{stockCode}
+          AND active = 'Y'
+    </select>
+
+    <select id="countOpenOrderByStockCode" resultType="int">
+        SELECT COUNT(*)
+        FROM orders
+        WHERE stock_code = #{stockCode}
+          AND order_status IN ('REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+    </select>
+
+    <select id="countActivePositions" resultType="int">
+        SELECT COUNT(*)
+        FROM positions
+        WHERE active = 'Y'
+    </select>
+
+    <insert id="insertOrderRecord">
+        INSERT INTO orders (
+            broker_order_id,
+            stock_code,
+            order_type,
+            order_quantity,
+            order_price,
+            order_amount,
+            order_status,
+            retry_count,
+            error_message,
+            requested_at,
+            updated_at
+        ) VALUES (
+            #{brokerOrderId},
+            #{stockCode},
+            #{orderType},
+            #{orderQuantity},
+            #{orderPrice},
+            #{orderAmount},
+            #{orderStatus},
+            0,
+            #{errorMessage},
+            #{requestedAt},
+            #{requestedAt}
+        )
+    </insert>
+
+    <insert id="insertSchedulerExecution">
+        INSERT INTO scheduler_execution (
+            scheduler_type,
+            started_at,
+            finished_at,
+            execution_status,
+            message
+        ) VALUES (
+            #{schedulerType},
+            #{startedAt},
+            #{finishedAt},
+            #{executionStatus},
+            #{message}
+        )
+    </insert>
+
+    <insert id="insertAuditLog">
+        INSERT INTO audit_log (
+            event_type,
+            stock_code,
+            details,
+            created_at
+        ) VALUES (
+            #{eventType},
+            #{stockCode},
+            #{details},
+            #{createdAt}
+        )
+    </insert>
+
     <insert id="insertOpenPosition">
         INSERT INTO pilot_positions (
             symbol,

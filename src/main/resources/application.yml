@@ -17,6 +17,42 @@ pilot:
         rotation-fixed-delay-ms: ${PILOT_LIFECYCLE_ROTATION_FIXED_DELAY_MS:300000}
         market-start-cron: ${PILOT_MARKET_START_CRON:0 0 9 * * MON-FRI}
 
+investment:
+    unit-amount: ${INVESTMENT_UNIT_AMOUNT:1000}
+    max-holdings: ${INVESTMENT_MAX_HOLDINGS:0}
+    max-per-stock: ${INVESTMENT_MAX_PER_STOCK:1}
+    include-etf: ${INVESTMENT_INCLUDE_ETF:false}
+    take-profit-rate: ${INVESTMENT_TAKE_PROFIT_RATE:0.10}
+    gray-max-trading-days: ${INVESTMENT_GRAY_MAX_TRADING_DAYS:3}
+    live-trading-enabled: ${INVESTMENT_LIVE_TRADING_ENABLED:false}
+    order-max-retry-count: ${INVESTMENT_ORDER_MAX_RETRY_COUNT:3}
+    order-retry-interval-seconds: ${INVESTMENT_ORDER_RETRY_INTERVAL_SECONDS:30}
+
+kis:
+    app-key: ${KIS_APP_KEY:}
+    app-secret: ${KIS_APP_SECRET:}
+    account-number: ${KIS_ACCOUNT_NUMBER:}
+    account-product-code: ${KIS_ACCOUNT_PRODUCT_CODE:}
+    base-url: ${KIS_BASE_URL:https://openapi.koreainvestment.com:9443}
+    token-path: ${KIS_TOKEN_PATH:/oauth2/tokenP}
+    current-price-path: ${KIS_CURRENT_PRICE_PATH:/uapi/domestic-stock/v1/quotations/inquire-price}
+    balance-path: ${KIS_BALANCE_PATH:/uapi/domestic-stock/v1/trading/inquire-balance}
+    order-cash-path: ${KIS_ORDER_CASH_PATH:/uapi/domestic-stock/v1/trading/order-cash}
+    current-price-tr-id: ${KIS_CURRENT_PRICE_TR_ID:FHKST01010100}
+    balance-tr-id: ${KIS_BALANCE_TR_ID:TTTC8434R}
+    buy-tr-id: ${KIS_BUY_TR_ID:TTTC0802U}
+    sell-tr-id: ${KIS_SELL_TR_ID:TTTC0801U}
+    customer-type: ${KIS_CUSTOMER_TYPE:P}
+    market-division-code: ${KIS_MARKET_DIVISION_CODE:J}
+    order-division: ${KIS_ORDER_DIVISION:01}
+
+scheduler:
+    trading-cycle-cron: ${TRADING_CYCLE_CRON:0 0,20,40 * * * *}
+    maintenance-fixed-delay-ms: ${MAINTENANCE_FIXED_DELAY_MS:300000}
+
+legacy-pilot:
+    enabled: ${LEGACY_PILOT_ENABLED:false}
+
 budget:
     pilot-allocation-ratio: ${PILOT_ALLOCATION_RATIO:0.10}
     total-wallet-balance:

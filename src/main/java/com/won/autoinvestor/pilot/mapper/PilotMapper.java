@@ -40,6 +40,33 @@ public interface PilotMapper {
                                         @Param("autobotAvailableAmount") String autobotAvailableAmount,
                                         @Param("calculatedAt") String calculatedAt);
 
+    int countActivePositionByStockCode(@Param("stockCode") String stockCode);
+
+    int countOpenOrderByStockCode(@Param("stockCode") String stockCode);
+
+    int countActivePositions();
+
+    void insertOrderRecord(@Param("brokerOrderId") String brokerOrderId,
+                           @Param("stockCode") String stockCode,
+                           @Param("orderType") String orderType,
+                           @Param("orderQuantity") String orderQuantity,
+                           @Param("orderPrice") String orderPrice,
+                           @Param("orderAmount") String orderAmount,
+                           @Param("orderStatus") String orderStatus,
+                           @Param("errorMessage") String errorMessage,
+                           @Param("requestedAt") String requestedAt);
+
+    void insertSchedulerExecution(@Param("schedulerType") String schedulerType,
+                                  @Param("startedAt") String startedAt,
+                                  @Param("finishedAt") String finishedAt,
+                                  @Param("executionStatus") String executionStatus,
+                                  @Param("message") String message);
+
+    void insertAuditLog(@Param("eventType") String eventType,
+                        @Param("stockCode") String stockCode,
+                        @Param("details") String details,
+                        @Param("createdAt") String createdAt);
+
     void insertOpenPosition(PilotPosition position);
 
     void insertPilotBalance(PilotPosition position);

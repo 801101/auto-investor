@@ -297,6 +297,104 @@ public class PilotSchemaInitializer {
                     CREATE INDEX IF NOT EXISTS idx_budget_allocation_snapshots_latest
                     ON budget_allocation_snapshots(market_currency, calculated_at DESC, id DESC)
                     """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS positions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        stock_code TEXT NOT NULL,
+                        stock_name TEXT,
+                        status TEXT NOT NULL,
+                        purchase_price TEXT NOT NULL,
+                        purchase_quantity TEXT NOT NULL,
+                        invested_amount TEXT NOT NULL,
+                        current_price TEXT,
+                        current_valuation_amount TEXT,
+                        profit_rate TEXT,
+                        last_evaluated_price TEXT,
+                        status_reference_price TEXT,
+                        gray_entered_date TEXT,
+                        gray_trading_days INTEGER NOT NULL DEFAULT 0,
+                        broker_order_id TEXT,
+                        active TEXT NOT NULL DEFAULT 'Y',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_positions_active_stock_code
+                    ON positions(stock_code)
+                    WHERE active = 'Y'
+                    """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS orders (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        broker_order_id TEXT,
+                        stock_code TEXT NOT NULL,
+                        order_type TEXT NOT NULL,
+                        order_quantity TEXT NOT NULL,
+                        order_price TEXT,
+                        order_amount TEXT NOT NULL,
+                        order_status TEXT NOT NULL,
+                        retry_count INTEGER NOT NULL DEFAULT 0,
+                        error_message TEXT,
+                        requested_at TEXT NOT NULL,
+                        accepted_at TEXT,
+                        filled_at TEXT,
+                        updated_at TEXT NOT NULL
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_orders_stock_status
+                    ON orders(stock_code, order_status, updated_at DESC)
+                    """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS price_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        stock_code TEXT NOT NULL,
+                        price TEXT NOT NULL,
+                        valuation_amount TEXT,
+                        recorded_at TEXT NOT NULL
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_price_history_stock_time
+                    ON price_history(stock_code, recorded_at DESC)
+                    """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS status_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        position_id INTEGER NOT NULL,
+                        previous_status TEXT,
+                        new_status TEXT NOT NULL,
+                        reason TEXT NOT NULL,
+                        previous_price TEXT,
+                        current_price TEXT,
+                        profit_rate TEXT,
+                        changed_at TEXT NOT NULL
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_status_history_position_time
+                    ON status_history(position_id, changed_at DESC)
+                    """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS scheduler_execution (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        scheduler_type TEXT NOT NULL,
+                        started_at TEXT NOT NULL,
+                        finished_at TEXT,
+                        execution_status TEXT NOT NULL,
+                        message TEXT
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS audit_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_type TEXT NOT NULL,
+                        stock_code TEXT,
+                        details TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """);
         }
 
         logger.info("pilot schema initialized");
