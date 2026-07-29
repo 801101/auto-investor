@@ -3,7 +3,6 @@ package com.won.autoinvestor.trading.order;
 import com.won.autoinvestor.broker.domain.AccountBalance;
 import com.won.autoinvestor.pilot.mapper.PilotMapper;
 import com.won.autoinvestor.trading.config.InvestmentProperties;
-import com.won.autoinvestor.trading.config.RiskProperties;
 import com.won.autoinvestor.trading.config.SafetyProperties;
 import com.won.autoinvestor.trading.service.AccountSyncStateService;
 import org.junit.jupiter.api.Test;
@@ -53,6 +52,23 @@ class OrderSafetyServiceTest {
     }
 
     @Test
+    void buyBlockedWhenTotalHoldingQuantityIncludingDuplicatesReachesMax() {
+        OrderSafetyResult result = service(0, 0, "49", "0", 50)
+                .validateBuy("005930", new BigDecimal("2"), new BigDecimal("2000"), balance("10000"), true);
+
+        assertFalse(result.orderAllowed());
+        assertEquals("MAX_HOLDINGS_REACHED", result.reason());
+    }
+
+    @Test
+    void buyAllowedWhenTotalHoldingQuantityIncludingDuplicatesEqualsMax() {
+        OrderSafetyResult result = service(0, 0, "49", "0", 50)
+                .validateBuy("005930", BigDecimal.ONE, new BigDecimal("1000"), balance("10000"), true);
+
+        assertTrue(result.orderAllowed());
+    }
+
+    @Test
     void buyBlockedWhenKillSwitchEnabled() {
         SafetyProperties safetyProperties = new SafetyProperties();
         safetyProperties.setKillSwitchEnabled(true);
@@ -91,8 +107,6 @@ class OrderSafetyServiceTest {
                                        int maxHoldings) {
         InvestmentProperties properties = new InvestmentProperties();
         properties.setMaxHoldings(maxHoldings);
-        RiskProperties riskProperties = new RiskProperties();
-        riskProperties.setMinimumCashReserve(BigDecimal.ZERO);
         PilotMapper mapper = (PilotMapper) Proxy.newProxyInstance(
                 PilotMapper.class.getClassLoader(),
                 new Class[]{PilotMapper.class},
@@ -112,7 +126,7 @@ class OrderSafetyServiceTest {
                     return null;
                 }
         );
-        return new OrderSafetyService(mapper, properties, riskProperties,
+        return new OrderSafetyService(mapper, properties,
                 new SafetyProperties(),
                 new AccountSyncStateService(),
                 java.time.Clock.system(java.time.ZoneId.of("Asia/Seoul")));
@@ -126,8 +140,6 @@ class OrderSafetyServiceTest {
                                        AccountSyncStateService syncStateService) {
         InvestmentProperties properties = new InvestmentProperties();
         properties.setMaxHoldings(maxHoldings);
-        RiskProperties riskProperties = new RiskProperties();
-        riskProperties.setMinimumCashReserve(BigDecimal.ZERO);
         PilotMapper mapper = (PilotMapper) Proxy.newProxyInstance(
                 PilotMapper.class.getClassLoader(),
                 new Class[]{PilotMapper.class},
@@ -147,7 +159,40 @@ class OrderSafetyServiceTest {
                     return null;
                 }
         );
-        return new OrderSafetyService(mapper, properties, riskProperties, safetyProperties, syncStateService,
+        return new OrderSafetyService(mapper, properties, safetyProperties, syncStateService,
+                java.time.Clock.system(java.time.ZoneId.of("Asia/Seoul")));
+    }
+
+    private OrderSafetyService service(int activePositionCount,
+                                       int openOrderCount,
+                                       String activeHoldingQuantity,
+                                       String openBuyOrderQuantity,
+                                       int maxHoldings) {
+        InvestmentProperties properties = new InvestmentProperties();
+        properties.setMaxHoldings(maxHoldings);
+        PilotMapper mapper = (PilotMapper) Proxy.newProxyInstance(
+                PilotMapper.class.getClassLoader(),
+                new Class[]{PilotMapper.class},
+                (proxy, method, args) -> {
+                    if ("countActivePositionByStockCode".equals(method.getName())) {
+                        return activePositionCount;
+                    }
+                    if ("countOpenOrderByStockCode".equals(method.getName())) {
+                        return openOrderCount;
+                    }
+                    if ("sumActiveHoldingQuantity".equals(method.getName())) {
+                        return activeHoldingQuantity;
+                    }
+                    if ("sumOpenBuyOrderQuantity".equals(method.getName())) {
+                        return openBuyOrderQuantity;
+                    }
+                    if (method.getReturnType().isPrimitive()) {
+                        return 0;
+                    }
+                    return null;
+                }
+        );
+        return new OrderSafetyService(mapper, properties, new SafetyProperties(), new AccountSyncStateService(),
                 java.time.Clock.system(java.time.ZoneId.of("Asia/Seoul")));
     }
 

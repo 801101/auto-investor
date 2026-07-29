@@ -46,11 +46,22 @@ public interface PilotMapper {
 
     int countActivePositions();
 
-    int countOrdersRequestedBetween(@Param("from") String from, @Param("to") String to);
+    String sumActiveHoldingQuantity();
 
-    String sumActiveInvestedAmount();
+    String sumOpenBuyOrderQuantity();
 
-    int countRecentFailedOrders();
+    void updatePositionLifecycleSnapshot(@Param("positionId") Long positionId,
+                                         @Param("status") String status,
+                                         @Param("currentPrice") String currentPrice,
+                                         @Param("averageBuyPrice") String averageBuyPrice,
+                                         @Param("referencePrice") String referencePrice,
+                                         @Param("highestPrice") String highestPrice,
+                                         @Param("lowestPrice") String lowestPrice,
+                                         @Param("holdingQuantity") String holdingQuantity,
+                                         @Param("returnRate") String returnRate,
+                                         @Param("grayTradingDays") Integer grayTradingDays,
+                                         @Param("lastEvaluatedAt") String lastEvaluatedAt,
+                                         @Param("updatedAt") String updatedAt);
 
     void insertOrderRecord(@Param("brokerOrderId") String brokerOrderId,
                            @Param("stockCode") String stockCode,
@@ -95,6 +106,24 @@ public interface PilotMapper {
                         @Param("stockCode") String stockCode,
                         @Param("details") String details,
                         @Param("createdAt") String createdAt);
+
+    void insertTradeLifecycleHistory(@Param("lifecycleId") Long lifecycleId,
+                                     @Param("eventType") String eventType,
+                                     @Param("previousState") String previousState,
+                                     @Param("newState") String newState,
+                                     @Param("currentPrice") String currentPrice,
+                                     @Param("averageBuyPrice") String averageBuyPrice,
+                                     @Param("referencePrice") String referencePrice,
+                                     @Param("highestPrice") String highestPrice,
+                                     @Param("lowestPrice") String lowestPrice,
+                                     @Param("holdingQuantity") String holdingQuantity,
+                                     @Param("returnRate") String returnRate,
+                                     @Param("grayTradingDays") Integer grayTradingDays,
+                                     @Param("reason") String reason,
+                                     @Param("orderId") Long orderId,
+                                     @Param("executionId") String executionId,
+                                     @Param("idempotencyKey") String idempotencyKey,
+                                     @Param("occurredAt") String occurredAt);
 
     void insertOpenPosition(PilotPosition position);
 

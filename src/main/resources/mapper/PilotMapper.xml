@@ -218,24 +218,34 @@
         WHERE active = 'Y'
     </select>
 
-    <select id="countOrdersRequestedBetween" resultType="int">
-        SELECT COUNT(*)
-        FROM orders
-        WHERE requested_at &gt;= #{from}
-          AND requested_at &lt; #{to}
-    </select>
-
-    <select id="sumActiveInvestedAmount" resultType="string">
-        SELECT COALESCE(SUM(CAST(invested_amount AS REAL)), 0)
+    <select id="sumActiveHoldingQuantity" resultType="string">
+        SELECT COALESCE(SUM(CAST(COALESCE(holding_quantity, purchase_quantity) AS REAL)), 0)
         FROM positions
         WHERE active = 'Y'
     </select>
 
-    <select id="countRecentFailedOrders" resultType="int">
-        SELECT COUNT(*)
+    <select id="sumOpenBuyOrderQuantity" resultType="string">
+        SELECT COALESCE(SUM(CAST(order_quantity AS REAL)), 0)
         FROM orders
-        WHERE order_status IN ('FAILED', 'REJECTED')
+        WHERE order_type = 'BUY'
+          AND order_status IN ('REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
     </select>
+
+    <update id="updatePositionLifecycleSnapshot">
+        UPDATE positions
+        SET status = #{status},
+            current_price = #{currentPrice},
+            average_buy_price = #{averageBuyPrice},
+            reference_price = #{referencePrice},
+            highest_price = #{highestPrice},
+            lowest_price = #{lowestPrice},
+            holding_quantity = #{holdingQuantity},
+            return_rate = #{returnRate},
+            gray_trading_days = #{grayTradingDays},
+            last_evaluated_at = #{lastEvaluatedAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{positionId}
+    </update>
 
     <insert id="insertOrderRecord">
         INSERT INTO orders (
@@ -352,6 +362,46 @@
             #{stockCode},
             #{details},
             #{createdAt}
+        )
+    </insert>
+
+    <insert id="insertTradeLifecycleHistory">
+        INSERT OR IGNORE INTO trade_lifecycle_history (
+            lifecycle_id,
+            event_type,
+            previous_state,
+            new_state,
+            current_price,
+            average_buy_price,
+            reference_price,
+            highest_price,
+            lowest_price,
+            holding_quantity,
+            return_rate,
+            gray_trading_days,
+            reason,
+            order_id,
+            execution_id,
+            idempotency_key,
+            occurred_at
+        ) VALUES (
+            #{lifecycleId},
+            #{eventType},
+            #{previousState},
+            #{newState},
+            #{currentPrice},
+            #{averageBuyPrice},
+            #{referencePrice},
+            #{highestPrice},
+            #{lowestPrice},
+            #{holdingQuantity},
+            #{returnRate},
+            #{grayTradingDays},
+            #{reason},
+            #{orderId},
+            #{executionId},
+            #{idempotencyKey},
+            #{occurredAt}
         )
     </insert>
 

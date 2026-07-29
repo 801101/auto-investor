@@ -20,16 +20,21 @@ investment:
     # 실전 주문 허용 여부입니다. 기본 false면 한국투자증권 주문 API를 호출하지 않고 Dry Run만 기록합니다.
     live-trading-enabled: ${INVESTMENT_LIVE_TRADING_ENABLED:false}
 
-    # AMOUNT=금액 기준, SHARE=주 수 기준입니다. 기본은 1,000원 금액 주문입니다.
+    # AMOUNT=돈으로 구매, SHARE=주 수로 구매입니다. 기본은 1,000원 금액 주문입니다.
     order-unit-type: ${INVESTMENT_ORDER_UNIT_TYPE:AMOUNT}
+
+    # order-unit-type=AMOUNT일 때 1회 목표 구매 금액입니다.
     unit-amount: ${INVESTMENT_UNIT_AMOUNT:1000}
+
+    # order-unit-type=SHARE일 때 1회 목표 구매 주 수입니다.
     unit-shares: ${INVESTMENT_UNIT_SHARES:1}
 
-    # 중복 매수와 보유 종목 수 제한입니다. max-holding-stocks는 주 수가 아니라 종목 수입니다.
+    # 중복 매수와 최대보유수입니다.
+    # max-holdings는 종목 수가 아니라 중복을 포함한 전체 보유 주 수 제한입니다.
+    # 예: 한 종목을 50주 보유했고 max-holdings=50이면 신규 매수는 중단됩니다.
     allow-duplicate-stock: ${INVESTMENT_ALLOW_DUPLICATE_STOCK:false}
-    max-holding-stocks: ${INVESTMENT_MAX_HOLDING_STOCKS:50}
     max-holdings: ${INVESTMENT_MAX_HOLDINGS:50}
-    max-per-stock: ${INVESTMENT_MAX_PER_STOCK:1}
+
     include-etf: ${INVESTMENT_INCLUDE_ETF:false}
 
     # 익절/손절은 별도 정책입니다. 손절률은 반드시 음수여야 합니다.
@@ -58,15 +63,6 @@ market:
     regular-close-time: ${MARKET_REGULAR_CLOSE_TIME:15:20}
     allow-pre-market-order: ${MARKET_ALLOW_PRE_MARKET_ORDER:false}
     allow-after-hours-order: ${MARKET_ALLOW_AFTER_HOURS_ORDER:false}
-
-risk:
-    # 소액 파일럿용 기본 위험 한도입니다. 숫자를 키우기 전 Dry Run으로 확인하십시오.
-    max-daily-loss-rate: ${RISK_MAX_DAILY_LOSS_RATE:-0.03}
-    max-daily-order-count: ${RISK_MAX_DAILY_ORDER_COUNT:100}
-    max-single-order-amount: ${RISK_MAX_SINGLE_ORDER_AMOUNT:10000}
-    max-total-invested-amount: ${RISK_MAX_TOTAL_INVESTED_AMOUNT:50000}
-    minimum-cash-reserve: ${RISK_MINIMUM_CASH_RESERVE:5000}
-    consecutive-error-stop-count: ${RISK_CONSECUTIVE_ERROR_STOP_COUNT:5}
 
 safety:
     # 주문 직전 차단 스위치입니다. kill switch가 true면 신규 실전/DryRun 주문 판단을 막습니다.
@@ -110,16 +106,3 @@ pilot:
     lifecycle:
         rotation-fixed-delay-ms: ${PILOT_LIFECYCLE_ROTATION_FIXED_DELAY_MS:300000}
         market-start-cron: ${PILOT_MARKET_START_CRON:0 0 9 * * MON-FRI}
-
-budget:
-    # 레거시 예산 서비스 호환 설정입니다.
-    pilot-allocation-ratio: ${PILOT_ALLOCATION_RATIO:0.10}
-    total-wallet-balance:
-        krw: ${TOTAL_WALLET_BALANCE_KRW:0}
-        usd: ${TOTAL_WALLET_BALANCE_USD:0}
-    minimum-pilot-budget:
-        krw: ${MINIMUM_PILOT_BUDGET_KRW:100000}
-        usd: ${MINIMUM_PILOT_BUDGET_USD:0}
-    minimum-operating-balance:
-        krw: ${MINIMUM_OPERATING_BALANCE_KRW:100000}
-        usd: ${MINIMUM_OPERATING_BALANCE_USD:0}

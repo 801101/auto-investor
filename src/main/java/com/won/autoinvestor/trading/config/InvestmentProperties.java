@@ -11,9 +11,7 @@ public class InvestmentProperties {
     private BigDecimal unitAmount = new BigDecimal("1000");
     private BigDecimal unitShares = BigDecimal.ONE;
     private boolean allowDuplicateStock = false;
-    private int maxHoldingStocks = 50;
-    private int maxHoldings = 0;
-    private int maxPerStock = 1;
+    private int maxHoldings = 50;
     private boolean includeEtf = false;
     private BigDecimal takeProfitRate = new BigDecimal("0.10");
     private RatePolicy takeProfit = new RatePolicy(true, new BigDecimal("0.10"));
@@ -55,14 +53,6 @@ public class InvestmentProperties {
         this.allowDuplicateStock = allowDuplicateStock;
     }
 
-    public int getMaxHoldingStocks() {
-        return maxHoldingStocks;
-    }
-
-    public void setMaxHoldingStocks(int maxHoldingStocks) {
-        this.maxHoldingStocks = maxHoldingStocks;
-    }
-
     public int getMaxHoldings() {
         return maxHoldings;
     }
@@ -71,12 +61,8 @@ public class InvestmentProperties {
         this.maxHoldings = maxHoldings;
     }
 
-    public int getMaxPerStock() {
-        return maxPerStock;
-    }
-
-    public void setMaxPerStock(int maxPerStock) {
-        this.maxPerStock = maxPerStock;
+    public int getMaxHoldingsLimit() {
+        return maxHoldings;
     }
 
     public boolean isIncludeEtf() {

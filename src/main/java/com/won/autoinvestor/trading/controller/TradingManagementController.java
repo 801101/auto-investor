@@ -48,7 +48,7 @@ public class TradingManagementController {
         status.put("unitAmount", investmentProperties.getUnitAmount());
         status.put("unitShares", investmentProperties.getUnitShares());
         status.put("allowDuplicateStock", investmentProperties.isAllowDuplicateStock());
-        status.put("maxHoldingStocks", investmentProperties.getMaxHoldingStocks());
+        status.put("maxHoldings", investmentProperties.getMaxHoldings());
         status.put("takeProfitEnabled", investmentProperties.getTakeProfit().isEnabled());
         status.put("takeProfitRate", investmentProperties.getTakeProfitRate());
         status.put("stopLossEnabled", investmentProperties.getStopLoss().isEnabled());
@@ -89,24 +89,9 @@ public class TradingManagementController {
         }
     }
 
-    @GetMapping("/account")
-    public Map<String, Object> account() {
-        return Map.of("message", "TODO: expose account snapshot after KIS account synchronization is implemented");
-    }
-
     @GetMapping("/positions")
     public Map<String, Object> positions() {
         return Map.of("activePositions", pilotMapper.countActivePositions());
-    }
-
-    @GetMapping("/orders")
-    public Map<String, Object> orders() {
-        return Map.of("message", "TODO: expose orders table with pagination");
-    }
-
-    @GetMapping("/status-history")
-    public Map<String, Object> statusHistory() {
-        return Map.of("message", "TODO: expose status_history table with pagination");
     }
 
     @PostMapping("/trading/evaluate")

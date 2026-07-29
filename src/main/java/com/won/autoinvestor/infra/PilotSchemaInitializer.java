@@ -319,6 +319,13 @@ public class PilotSchemaInitializer {
                         updated_at TEXT NOT NULL
                     )
                     """);
+            addColumnIfMissing(connection, "positions", "average_buy_price", "TEXT");
+            addColumnIfMissing(connection, "positions", "reference_price", "TEXT");
+            addColumnIfMissing(connection, "positions", "highest_price", "TEXT");
+            addColumnIfMissing(connection, "positions", "lowest_price", "TEXT");
+            addColumnIfMissing(connection, "positions", "holding_quantity", "TEXT");
+            addColumnIfMissing(connection, "positions", "return_rate", "TEXT");
+            addColumnIfMissing(connection, "positions", "last_evaluated_at", "TEXT");
             statement.executeUpdate("""
                     CREATE UNIQUE INDEX IF NOT EXISTS ux_positions_active_stock_code
                     ON positions(stock_code)
@@ -361,34 +368,34 @@ public class PilotSchemaInitializer {
                     WHERE idempotency_key IS NOT NULL
                     """);
             statement.executeUpdate("""
-                    CREATE TABLE IF NOT EXISTS price_history (
+                    CREATE TABLE IF NOT EXISTS trade_lifecycle_history (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        stock_code TEXT NOT NULL,
-                        price TEXT NOT NULL,
-                        valuation_amount TEXT,
-                        recorded_at TEXT NOT NULL
-                    )
-                    """);
-            statement.executeUpdate("""
-                    CREATE INDEX IF NOT EXISTS idx_price_history_stock_time
-                    ON price_history(stock_code, recorded_at DESC)
-                    """);
-            statement.executeUpdate("""
-                    CREATE TABLE IF NOT EXISTS status_history (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        position_id INTEGER NOT NULL,
-                        previous_status TEXT,
-                        new_status TEXT NOT NULL,
-                        reason TEXT NOT NULL,
-                        previous_price TEXT,
+                        lifecycle_id INTEGER NOT NULL,
+                        event_type TEXT NOT NULL,
+                        previous_state TEXT,
+                        new_state TEXT,
                         current_price TEXT,
-                        profit_rate TEXT,
-                        changed_at TEXT NOT NULL
+                        average_buy_price TEXT,
+                        reference_price TEXT,
+                        highest_price TEXT,
+                        lowest_price TEXT,
+                        holding_quantity TEXT,
+                        return_rate TEXT,
+                        gray_trading_days INTEGER,
+                        reason TEXT,
+                        order_id INTEGER,
+                        execution_id TEXT,
+                        idempotency_key TEXT NOT NULL,
+                        occurred_at TEXT NOT NULL
                     )
                     """);
             statement.executeUpdate("""
-                    CREATE INDEX IF NOT EXISTS idx_status_history_position_time
-                    ON status_history(position_id, changed_at DESC)
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_trade_lifecycle_history_idempotency
+                    ON trade_lifecycle_history(idempotency_key)
+                    """);
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_trade_lifecycle_history_lifecycle_time
+                    ON trade_lifecycle_history(lifecycle_id, occurred_at, id)
                     """);
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS scheduler_execution (

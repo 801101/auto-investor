@@ -25,7 +25,7 @@ kis:
     account-product-code: "01"
 ```
 
-예시는 `src/main/resources/application-local.example.yml`을 참고하십시오.
+위 형식 그대로 `src/main/resources/application-local.yml`에 작성하면 됩니다.
 
 ## 실전 주문 활성화
 
@@ -44,13 +44,17 @@ investment.live-trading-enabled: true
 investment.order-unit-type: AMOUNT
 investment.unit-amount: 1000
 investment.unit-shares: 1
-investment.max-holding-stocks: 50
+investment.max-holdings: 50
 investment.allow-duplicate-stock: false
 ```
 
-`AMOUNT`는 목표 금액을 현재가로 나누어 정수 수량으로 내림 계산합니다. 1,000원 주문에 현재가가 70,000원이면 수량 0으로 판단하고 주문 API를 호출하지 않습니다.
+`AMOUNT`는 한 번의 매수에서 사용할 최대 금액입니다. 실제 주문 가능 잔액이 더 적으면 `min(unit-amount, 실제 주문 가능 잔액)` 안에서 가능한 정수 수량을 계산합니다. 1,000원 주문은 현재가가 1,000원 이하인 종목만 1주 이상 주문 가능합니다. 현재가가 70,000원이면 수량 0으로 판단하고 주문 API를 호출하지 않습니다. 현재가가 100원이면 10주까지 주문될 수 있습니다.
 
-`max-holding-stocks`는 주 수가 아니라 보유 종목 수 제한입니다. 삼성전자 50주만 보유한 경우 보유 종목 수는 1개입니다.
+`SHARE`는 `unit-shares` 값 그대로 주문수량을 사용합니다.
+
+`max-holdings`는 종목 수가 아니라 중복을 포함한 전체 보유 주 수 제한입니다. 한 종목을 50주 보유했고 `max-holdings: 50`이면 그걸로 끝이고 신규 매수는 막힙니다. `max-holdings: 0`은 제한 없음입니다.
+
+매수 후보는 먼저 실제 주문 가능 잔액, 현재가, 중복 매수 정책, 최대보유수로 구매 가능 여부를 계산합니다. 구매 가능한 후보만 남긴 뒤 기존 평가점수 기준으로 정렬해 가장 좋은 후보를 선택합니다.
 
 ## 손절과 GRAY 만료
 
@@ -77,22 +81,23 @@ safety.reject-order-when-account-mismatch: true
 
 kill switch가 켜지면 주문 판단을 차단합니다. 계좌 동기화 실패 상태에서도 신규 주문은 차단됩니다.
 
-## 위험 한도
-
-```yaml
-risk.max-daily-loss-rate: -0.03
-risk.max-daily-order-count: 100
-risk.max-single-order-amount: 10000
-risk.max-total-invested-amount: 50000
-risk.minimum-cash-reserve: 5000
-risk.consecutive-error-stop-count: 5
-```
-
-위 값들은 소액 파일럿 기본값입니다. 주문 직전 단일 주문 금액, 일일 주문 수, 총 투자금, 예비 현금, 연속 실패 수를 검사합니다.
-
 ## 주문 멱등성
 
 `orders.idempotency_key`에 UNIQUE 인덱스를 둡니다. 같은 `decisionCycleId`에서 같은 계좌, 전략, 종목, 주문 방향으로 다시 요청해도 새 주문 레코드를 만들지 않고 기존 주문 상태를 재사용합니다.
+
+## 생애주기 이력
+
+`positions`는 현재 전략 상태와 현재가, 기준가, 최고가, 최저가, 보유수량, 수익률, GRAY 경과 거래일, 최종 평가 시각을 덮어써서 관리합니다.
+
+`trade_lifecycle_history`는 중요한 사건만 저장합니다. 단순 현재가 변동, 상태 유지 평가, 한 호가 단위 변동, 최고가/최저가 소폭 갱신, 반복 스케줄 실행은 저장하지 않습니다.
+
+대표 흐름:
+
+```text
+BUY_FILLED -> WHITE_ENTERED -> WHITE_TO_GRAY -> GRAY_DAY_COUNTED -> WHITE_RECOVERED -> TAKE_PROFIT_TRIGGERED -> SELL_FILLED -> CLOSED
+```
+
+일반적인 1회 매수 후 1회 매도 라이프사이클은 보통 6-12건 정도의 이력만 남습니다. GRAY가 오래 유지되면 실제 거래일 증가분만큼 `GRAY_DAY_COUNTED`가 추가됩니다.
 
 ## 장 운영시간
 
@@ -115,8 +120,8 @@ market.regular-close-time: 15:20
 ```text
 GET  /api/system/status
 GET  /api/system/kis/health
-POST /api/trading/sync
 POST /api/trading/run-cycle
+POST /api/trading/sync
 ```
 
 ## 테스트

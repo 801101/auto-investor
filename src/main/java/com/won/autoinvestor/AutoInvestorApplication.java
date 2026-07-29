@@ -3,7 +3,6 @@ package com.won.autoinvestor;
 import com.won.autoinvestor.kis.config.KisProperties;
 import com.won.autoinvestor.trading.config.InvestmentProperties;
 import com.won.autoinvestor.trading.config.MarketProperties;
-import com.won.autoinvestor.trading.config.RiskProperties;
 import com.won.autoinvestor.trading.config.RuntimeProperties;
 import com.won.autoinvestor.trading.config.SafetyProperties;
 import org.springframework.boot.SpringApplication;
@@ -16,7 +15,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         InvestmentProperties.class,
         KisProperties.class,
         MarketProperties.class,
-        RiskProperties.class,
         SafetyProperties.class,
         RuntimeProperties.class
 })

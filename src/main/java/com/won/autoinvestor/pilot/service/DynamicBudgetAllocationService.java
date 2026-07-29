@@ -25,13 +25,13 @@ public class DynamicBudgetAllocationService {
     private final BigDecimal minimumOperatingBalanceUsd;
 
     public DynamicBudgetAllocationService(PilotMapper pilotMapper,
-                                          @Value("${budget.pilot-allocation-ratio}") BigDecimal pilotAllocationRatio,
-                                          @Value("${budget.total-wallet-balance.krw}") BigDecimal totalWalletBalanceKrw,
-                                          @Value("${budget.total-wallet-balance.usd}") BigDecimal totalWalletBalanceUsd,
-                                          @Value("${budget.minimum-pilot-budget.krw}") BigDecimal minimumPilotBudgetKrw,
-                                          @Value("${budget.minimum-pilot-budget.usd}") BigDecimal minimumPilotBudgetUsd,
-                                          @Value("${budget.minimum-operating-balance.krw}") BigDecimal minimumOperatingBalanceKrw,
-                                          @Value("${budget.minimum-operating-balance.usd}") BigDecimal minimumOperatingBalanceUsd) {
+                                          @Value("${budget.pilot-allocation-ratio:0.10}") BigDecimal pilotAllocationRatio,
+                                          @Value("${budget.total-wallet-balance.krw:0}") BigDecimal totalWalletBalanceKrw,
+                                          @Value("${budget.total-wallet-balance.usd:0}") BigDecimal totalWalletBalanceUsd,
+                                          @Value("${budget.minimum-pilot-budget.krw:100000}") BigDecimal minimumPilotBudgetKrw,
+                                          @Value("${budget.minimum-pilot-budget.usd:0}") BigDecimal minimumPilotBudgetUsd,
+                                          @Value("${budget.minimum-operating-balance.krw:100000}") BigDecimal minimumOperatingBalanceKrw,
+                                          @Value("${budget.minimum-operating-balance.usd:0}") BigDecimal minimumOperatingBalanceUsd) {
         this.pilotMapper = pilotMapper;
         this.pilotAllocationRatio = pilotAllocationRatio;
         this.totalWalletBalanceKrw = totalWalletBalanceKrw;

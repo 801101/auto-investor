@@ -17,20 +17,17 @@ public class TradingPolicyValidator implements ApplicationRunner {
 
     private final InvestmentProperties investmentProperties;
     private final MarketProperties marketProperties;
-    private final RiskProperties riskProperties;
     private final SafetyProperties safetyProperties;
     private final RuntimeProperties runtimeProperties;
     private final KisProperties kisProperties;
 
     public TradingPolicyValidator(InvestmentProperties investmentProperties,
                                   MarketProperties marketProperties,
-                                  RiskProperties riskProperties,
                                   SafetyProperties safetyProperties,
                                   RuntimeProperties runtimeProperties,
                                   KisProperties kisProperties) {
         this.investmentProperties = investmentProperties;
         this.marketProperties = marketProperties;
-        this.riskProperties = riskProperties;
         this.safetyProperties = safetyProperties;
         this.runtimeProperties = runtimeProperties;
         this.kisProperties = kisProperties;
@@ -42,8 +39,7 @@ public class TradingPolicyValidator implements ApplicationRunner {
         requireNegative(investmentProperties.getStopLoss().getRate(), "investment.stop-loss.rate must be < 0");
         requirePositive(investmentProperties.getUnitAmount(), "investment.unit-amount must be > 0");
         requirePositive(investmentProperties.getUnitShares(), "investment.unit-shares must be > 0");
-        require(investmentProperties.getMaxHoldingStocks() >= 0, "investment.max-holding-stocks must be >= 0");
-        require(investmentProperties.getMaxPerStock() > 0, "investment.max-per-stock must be > 0");
+        require(investmentProperties.getMaxHoldings() >= 0, "investment.max-holdings must be >= 0");
         require(investmentProperties.getGrayMaxTradingDays() > 0, "investment.gray-max-trading-days must be > 0");
         require(investmentProperties.getOrderMaxRetryCount() >= 0, "investment.order-max-retry-count must be >= 0");
         require(investmentProperties.getOrderRetryIntervalSeconds() > 0, "investment.order-retry-interval-seconds must be > 0");
@@ -55,14 +51,6 @@ public class TradingPolicyValidator implements ApplicationRunner {
         require(marketProperties.getRegularOpenTime().isBefore(marketProperties.getRegularCloseTime()),
                 "market.regular-open-time must be before market.regular-close-time");
 
-        requireNegative(riskProperties.getMaxDailyLossRate(), "risk.max-daily-loss-rate must be < 0");
-        require(riskProperties.getMaxDailyOrderCount() >= 0, "risk.max-daily-order-count must be >= 0");
-        requirePositive(riskProperties.getMaxSingleOrderAmount(), "risk.max-single-order-amount must be > 0");
-        requirePositive(riskProperties.getMaxTotalInvestedAmount(), "risk.max-total-invested-amount must be > 0");
-        require(riskProperties.getMinimumCashReserve().compareTo(BigDecimal.ZERO) >= 0,
-                "risk.minimum-cash-reserve must be >= 0");
-        require(riskProperties.getConsecutiveErrorStopCount() >= 0,
-                "risk.consecutive-error-stop-count must be >= 0");
         require(safetyProperties.getRejectOrderWhenPriceStaleSeconds() > 0,
                 "safety.reject-order-when-price-stale-seconds must be > 0");
 

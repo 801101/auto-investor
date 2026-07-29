@@ -59,8 +59,6 @@ public class TradingCycleService {
                 return;
             }
             accountSynchronizationService.syncAccount();
-            pilotMapper.insertAuditLog("TRADING_CYCLE_TODO", null,
-                    "TODO: sync open orders, sync prices, evaluate states, sell BLACK, generate candidates, dry-run buy", now());
         });
     }
 
@@ -68,8 +66,6 @@ public class TradingCycleService {
         runLocked("ORDER_MAINTENANCE", () -> {
             logger.info("order maintenance cycle started");
             accountSynchronizationService.syncAccount();
-            pilotMapper.insertAuditLog("ORDER_MAINTENANCE_TODO", null,
-                    "TODO: sync open orders, reflect fills, retry failed orders, clean locks", now());
         });
     }
 
