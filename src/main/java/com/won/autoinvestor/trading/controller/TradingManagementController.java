@@ -1,6 +1,7 @@
 package com.won.autoinvestor.trading.controller;
 
 import com.won.autoinvestor.pilot.mapper.PilotMapper;
+import com.won.autoinvestor.broker.BrokerClient;
 import com.won.autoinvestor.kis.config.KisProperties;
 import com.won.autoinvestor.trading.config.InvestmentProperties;
 import com.won.autoinvestor.trading.service.AccountSynchronizationService;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
@@ -18,17 +20,20 @@ public class TradingManagementController {
 
     private final InvestmentProperties investmentProperties;
     private final KisProperties kisProperties;
+    private final BrokerClient brokerClient;
     private final PilotMapper pilotMapper;
     private final AccountSynchronizationService accountSynchronizationService;
     private final TradingCycleService tradingCycleService;
 
     public TradingManagementController(InvestmentProperties investmentProperties,
                                        KisProperties kisProperties,
+                                       BrokerClient brokerClient,
                                        PilotMapper pilotMapper,
                                        AccountSynchronizationService accountSynchronizationService,
                                        TradingCycleService tradingCycleService) {
         this.investmentProperties = investmentProperties;
         this.kisProperties = kisProperties;
+        this.brokerClient = brokerClient;
         this.pilotMapper = pilotMapper;
         this.accountSynchronizationService = accountSynchronizationService;
         this.tradingCycleService = tradingCycleService;
@@ -36,14 +41,52 @@ public class TradingManagementController {
 
     @GetMapping("/system/status")
     public Map<String, Object> systemStatus() {
-        return Map.of(
-                "running", true,
-                "liveTradingEnabled", investmentProperties.isLiveTradingEnabled(),
-                "activePanicStopCount", pilotMapper.countActivePanicStop(),
-                "kisConfigured", kisProperties.isConfigured(),
-                "kisBaseUrl", kisProperties.getBaseUrl(),
-                "kisAccount", maskedAccountNumber()
-        );
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("running", true);
+        status.put("liveTradingEnabled", investmentProperties.isLiveTradingEnabled());
+        status.put("orderUnitType", investmentProperties.getOrderUnitType());
+        status.put("unitAmount", investmentProperties.getUnitAmount());
+        status.put("unitShares", investmentProperties.getUnitShares());
+        status.put("allowDuplicateStock", investmentProperties.isAllowDuplicateStock());
+        status.put("maxHoldingStocks", investmentProperties.getMaxHoldingStocks());
+        status.put("takeProfitEnabled", investmentProperties.getTakeProfit().isEnabled());
+        status.put("takeProfitRate", investmentProperties.getTakeProfitRate());
+        status.put("stopLossEnabled", investmentProperties.getStopLoss().isEnabled());
+        status.put("stopLossRate", investmentProperties.getStopLoss().getRate());
+        status.put("activePanicStopCount", pilotMapper.countActivePanicStop());
+        status.put("kisConfigured", kisProperties.isConfigured());
+        status.put("kisBaseUrl", kisProperties.getBaseUrl());
+        status.put("kisAccount", maskedAccountNumber());
+        return status;
+    }
+
+    @GetMapping("/system/kis/health")
+    public Map<String, Object> kisHealth() {
+        if (!kisProperties.isConfigured()) {
+            return Map.of(
+                    "connected", false,
+                    "configured", false,
+                    "message", "KIS environment variables are not fully configured"
+            );
+        }
+
+        try {
+            brokerClient.issueAccessToken();
+            return Map.of(
+                    "connected", true,
+                    "configured", true,
+                    "baseUrl", kisProperties.getBaseUrl(),
+                    "account", maskedAccountNumber()
+            );
+        } catch (RuntimeException e) {
+            return Map.of(
+                    "connected", false,
+                    "configured", true,
+                    "baseUrl", kisProperties.getBaseUrl(),
+                    "account", maskedAccountNumber(),
+                    "message", e.getMessage()
+            );
+        }
     }
 
     @GetMapping("/account")

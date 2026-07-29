@@ -46,6 +46,12 @@ public interface PilotMapper {
 
     int countActivePositions();
 
+    int countOrdersRequestedBetween(@Param("from") String from, @Param("to") String to);
+
+    String sumActiveInvestedAmount();
+
+    int countRecentFailedOrders();
+
     void insertOrderRecord(@Param("brokerOrderId") String brokerOrderId,
                            @Param("stockCode") String stockCode,
                            @Param("orderType") String orderType,
@@ -55,6 +61,29 @@ public interface PilotMapper {
                            @Param("orderStatus") String orderStatus,
                            @Param("errorMessage") String errorMessage,
                            @Param("requestedAt") String requestedAt);
+
+    int countOrderByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
+
+    String selectOrderStatusByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
+
+    void insertOrderRecordDetailed(@Param("brokerOrderId") String brokerOrderId,
+                                   @Param("stockCode") String stockCode,
+                                   @Param("orderType") String orderType,
+                                   @Param("orderQuantity") String orderQuantity,
+                                   @Param("orderPrice") String orderPrice,
+                                   @Param("orderAmount") String orderAmount,
+                                   @Param("orderStatus") String orderStatus,
+                                   @Param("errorMessage") String errorMessage,
+                                   @Param("requestedAt") String requestedAt,
+                                   @Param("idempotencyKey") String idempotencyKey,
+                                   @Param("decisionCycleId") String decisionCycleId,
+                                   @Param("instanceId") String instanceId,
+                                   @Param("maskedAccount") String maskedAccount,
+                                   @Param("skipReason") String skipReason,
+                                   @Param("exitReason") String exitReason,
+                                   @Param("dryRun") String dryRun,
+                                   @Param("currentPrice") String currentPrice,
+                                   @Param("currentPriceAt") String currentPriceAt);
 
     void insertSchedulerExecution(@Param("schedulerType") String schedulerType,
                                   @Param("startedAt") String startedAt,

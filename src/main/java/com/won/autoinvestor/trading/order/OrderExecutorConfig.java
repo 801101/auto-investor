@@ -19,7 +19,7 @@ public class OrderExecutorConfig {
                                        PilotMapper pilotMapper) {
         logger.info("live trading enabled: {}", investmentProperties.isLiveTradingEnabled());
         if (investmentProperties.isLiveTradingEnabled()) {
-            return new LiveOrderExecutor(brokerClient);
+            return new LiveOrderExecutor(brokerClient, pilotMapper);
         }
         return new DryRunOrderExecutor(pilotMapper);
     }

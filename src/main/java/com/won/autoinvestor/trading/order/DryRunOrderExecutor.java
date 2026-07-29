@@ -24,9 +24,15 @@ public class DryRunOrderExecutor implements OrderExecutor {
     @Override
     public OrderResult buy(BuyOrderRequest request) {
         String requestedAt = now();
+        if (exists(request.idempotencyKey())) {
+            String status = pilotMapper.selectOrderStatusByIdempotencyKey(request.idempotencyKey());
+            logger.info("[DRY_RUN_BUY_REUSED] stockCode={}, idempotencyKey={}, status={}",
+                    request.stockCode(), request.idempotencyKey(), status);
+            return OrderResult.accepted(null, status == null ? "REUSED" : status, "dry-run buy reused by idempotency key");
+        }
         logger.info("[DRY_RUN_BUY] stockCode={}, quantity={}, amount={}, price={}, reason={}",
                 request.stockCode(), request.orderQuantity(), request.orderAmount(), request.orderPrice(), request.reason());
-        pilotMapper.insertOrderRecord(
+        pilotMapper.insertOrderRecordDetailed(
                 null,
                 request.stockCode(),
                 "BUY",
@@ -35,7 +41,16 @@ public class DryRunOrderExecutor implements OrderExecutor {
                 request.orderAmount().toPlainString(),
                 "DRY_RUN",
                 null,
-                requestedAt
+                requestedAt,
+                request.idempotencyKey(),
+                request.decisionCycleId(),
+                request.instanceId(),
+                request.maskedAccount(),
+                null,
+                request.exitReason() == null ? null : request.exitReason().name(),
+                "Y",
+                request.currentPrice() == null ? null : request.currentPrice().toPlainString(),
+                request.currentPriceAt() == null ? null : request.currentPriceAt().format(TIME_FORMATTER)
         );
         pilotMapper.insertAuditLog("DRY_RUN_BUY", request.stockCode(), request.toString(), requestedAt);
         return OrderResult.accepted(null, "DRY_RUN", "dry-run buy recorded");
@@ -44,9 +59,15 @@ public class DryRunOrderExecutor implements OrderExecutor {
     @Override
     public OrderResult sell(SellOrderRequest request) {
         String requestedAt = now();
+        if (exists(request.idempotencyKey())) {
+            String status = pilotMapper.selectOrderStatusByIdempotencyKey(request.idempotencyKey());
+            logger.info("[DRY_RUN_SELL_REUSED] stockCode={}, idempotencyKey={}, status={}",
+                    request.stockCode(), request.idempotencyKey(), status);
+            return OrderResult.accepted(null, status == null ? "REUSED" : status, "dry-run sell reused by idempotency key");
+        }
         logger.info("[DRY_RUN_SELL] stockCode={}, quantity={}, amount={}, price={}, reason={}",
                 request.stockCode(), request.orderQuantity(), request.orderAmount(), request.orderPrice(), request.reason());
-        pilotMapper.insertOrderRecord(
+        pilotMapper.insertOrderRecordDetailed(
                 null,
                 request.stockCode(),
                 "SELL",
@@ -55,10 +76,24 @@ public class DryRunOrderExecutor implements OrderExecutor {
                 request.orderAmount().toPlainString(),
                 "DRY_RUN",
                 null,
-                requestedAt
+                requestedAt,
+                request.idempotencyKey(),
+                request.decisionCycleId(),
+                request.instanceId(),
+                request.maskedAccount(),
+                null,
+                request.exitReason() == null ? null : request.exitReason().name(),
+                "Y",
+                request.currentPrice() == null ? null : request.currentPrice().toPlainString(),
+                request.currentPriceAt() == null ? null : request.currentPriceAt().format(TIME_FORMATTER)
         );
         pilotMapper.insertAuditLog("DRY_RUN_SELL", request.stockCode(), request.toString(), requestedAt);
         return OrderResult.accepted(null, "DRY_RUN", "dry-run sell recorded");
+    }
+
+    private boolean exists(String idempotencyKey) {
+        return idempotencyKey != null && !idempotencyKey.isBlank()
+                && pilotMapper.countOrderByIdempotencyKey(idempotencyKey) > 0;
     }
 
     private String now() {

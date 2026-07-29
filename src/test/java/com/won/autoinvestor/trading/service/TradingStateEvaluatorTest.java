@@ -1,6 +1,7 @@
 package com.won.autoinvestor.trading.service;
 
 import com.won.autoinvestor.trading.config.InvestmentProperties;
+import com.won.autoinvestor.trading.domain.ExitReason;
 import com.won.autoinvestor.trading.domain.TradingEvaluationContext;
 import com.won.autoinvestor.trading.domain.TradingEvaluationResult;
 import com.won.autoinvestor.trading.domain.TradingStatus;
@@ -35,6 +36,32 @@ class TradingStateEvaluatorTest {
     }
 
     @Test
+    void whiteMovesToBlackWhenStopLossEnabledAndReached() {
+        InvestmentProperties properties = new InvestmentProperties();
+        properties.getStopLoss().setEnabled(true);
+        TradingStateEvaluator stopLossEvaluator = new TradingStateEvaluator(properties);
+
+        TradingEvaluationResult result = stopLossEvaluator.evaluate(
+                context(TradingStatus.WHITE, "1000", "900", "1000", "900", "-0.10", 0));
+
+        assertEquals(TradingStatus.BLACK, result.getStatus());
+        assertEquals(ExitReason.STOP_LOSS, result.getExitReason());
+    }
+
+    @Test
+    void grayMovesToBlackWhenStopLossEnabledAndReached() {
+        InvestmentProperties properties = new InvestmentProperties();
+        properties.getStopLoss().setEnabled(true);
+        TradingStateEvaluator stopLossEvaluator = new TradingStateEvaluator(properties);
+
+        TradingEvaluationResult result = stopLossEvaluator.evaluate(
+                context(TradingStatus.GRAY, "1000", "900", "1000", "900", "-0.10", 1));
+
+        assertEquals(TradingStatus.BLACK, result.getStatus());
+        assertEquals(ExitReason.STOP_LOSS, result.getExitReason());
+    }
+
+    @Test
     void whiteTakeProfitWinsOverPriceDecline() {
         assertEquals(TradingStatus.BLACK, evaluate(TradingStatus.WHITE, "1200", "1100", "1000", "1100", "0.10", 0));
     }
@@ -46,7 +73,9 @@ class TradingStateEvaluatorTest {
 
     @Test
     void grayMovesToBlackOnTradingDayTimeout() {
-        assertEquals(TradingStatus.BLACK, evaluate(TradingStatus.GRAY, "990", "1000", "1000", "1000", "0.00", 3));
+        TradingEvaluationResult result = evaluator.evaluate(context(TradingStatus.GRAY, "990", "1000", "1000", "1000", "0.00", 3));
+        assertEquals(TradingStatus.BLACK, result.getStatus());
+        assertEquals(ExitReason.GRAY_TIMEOUT, result.getExitReason());
     }
 
     @Test

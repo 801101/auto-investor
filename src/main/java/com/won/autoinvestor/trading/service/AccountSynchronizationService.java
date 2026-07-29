@@ -17,22 +17,29 @@ public class AccountSynchronizationService {
 
     private final BrokerClient brokerClient;
     private final PilotMapper pilotMapper;
+    private final AccountSyncStateService accountSyncStateService;
 
-    public AccountSynchronizationService(BrokerClient brokerClient, PilotMapper pilotMapper) {
+    public AccountSynchronizationService(BrokerClient brokerClient,
+                                         PilotMapper pilotMapper,
+                                         AccountSyncStateService accountSyncStateService) {
         this.brokerClient = brokerClient;
         this.pilotMapper = pilotMapper;
+        this.accountSyncStateService = accountSyncStateService;
     }
 
     public void syncAccount() {
         try {
             brokerClient.getAccountBalance();
             brokerClient.getHoldings();
+            accountSyncStateService.recordSuccess();
             pilotMapper.insertAuditLog("ACCOUNT_SYNC", null, "account and holdings synchronized", now());
             logger.info("account synchronization completed");
         } catch (UnsupportedOperationException e) {
+            accountSyncStateService.recordFailure(e.getMessage());
             pilotMapper.insertAuditLog("ACCOUNT_SYNC_SKIPPED", null, e.getMessage(), now());
             logger.warn("account synchronization skipped: {}", e.getMessage());
         } catch (RuntimeException e) {
+            accountSyncStateService.recordFailure(e.getMessage());
             pilotMapper.insertAuditLog("ACCOUNT_SYNC_FAILED", null, e.getMessage(), now());
             logger.error("account synchronization failed", e);
         }

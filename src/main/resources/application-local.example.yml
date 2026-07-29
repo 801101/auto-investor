@@ -1,0 +1,30 @@
+# application-local.yml 작성 예시입니다. 실제 민감정보는 넣지 마십시오.
+
+kis:
+    app-key: "발급받은_APP_KEY"
+    app-secret: "발급받은_APP_SECRET"
+    account-number: "12345678"
+    account-product-code: "01"
+
+investment:
+    # false이면 주문 API를 호출하지 않고 Dry Run으로 DB/로그만 기록합니다.
+    live-trading-enabled: false
+    order-unit-type: AMOUNT
+    unit-amount: 1000
+    unit-shares: 1
+    allow-duplicate-stock: false
+    max-holding-stocks: 50
+    take-profit:
+        enabled: true
+        rate: 0.10
+    stop-loss:
+        enabled: false
+        rate: -0.10
+
+runtime:
+    # 주문 판단 사이클 실행 스위치입니다.
+    trading-enabled: false
+    instance-id: local-01
+
+safety:
+    kill-switch-enabled: false

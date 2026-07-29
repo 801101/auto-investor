@@ -1,6 +1,7 @@
 package com.won.autoinvestor.trading.service;
 
 import com.won.autoinvestor.trading.config.InvestmentProperties;
+import com.won.autoinvestor.trading.domain.ExitReason;
 import com.won.autoinvestor.trading.domain.TradingEvaluationContext;
 import com.won.autoinvestor.trading.domain.TradingEvaluationResult;
 import com.won.autoinvestor.trading.domain.TradingStatus;
@@ -26,8 +27,12 @@ public class TradingStateEvaluator {
     }
 
     private TradingEvaluationResult evaluateWhite(TradingEvaluationContext context) {
-        if (context.getProfitRate().compareTo(investmentProperties.getTakeProfitRate()) >= 0) {
-            return new TradingEvaluationResult(TradingStatus.BLACK, "TAKE_PROFIT");
+        if (investmentProperties.getTakeProfit().isEnabled()
+                && context.getProfitRate().compareTo(investmentProperties.getTakeProfitRate()) >= 0) {
+            return new TradingEvaluationResult(TradingStatus.BLACK, "TAKE_PROFIT", ExitReason.TAKE_PROFIT);
+        }
+        if (isStopLossReached(context)) {
+            return new TradingEvaluationResult(TradingStatus.BLACK, "STOP_LOSS", ExitReason.STOP_LOSS);
         }
         if (context.getCurrentPrice().compareTo(context.getLastEvaluatedPrice()) < 0) {
             return new TradingEvaluationResult(TradingStatus.GRAY, "PRICE_DECLINE");
@@ -36,8 +41,11 @@ public class TradingStateEvaluator {
     }
 
     private TradingEvaluationResult evaluateGray(TradingEvaluationContext context) {
+        if (isStopLossReached(context)) {
+            return new TradingEvaluationResult(TradingStatus.BLACK, "STOP_LOSS", ExitReason.STOP_LOSS);
+        }
         if (context.getGrayTradingDays() >= investmentProperties.getGrayMaxTradingDays()) {
-            return new TradingEvaluationResult(TradingStatus.BLACK, "GRAY_TRADING_DAY_TIMEOUT");
+            return new TradingEvaluationResult(TradingStatus.BLACK, "GRAY_TRADING_DAY_TIMEOUT", ExitReason.GRAY_TIMEOUT);
         }
         if (context.getCurrentPrice().compareTo(context.getLastEvaluatedPrice()) > 0
                 && context.getCurrentValuationAmount().compareTo(context.getInvestedAmount()) >= 0) {
@@ -60,5 +68,10 @@ public class TradingStateEvaluator {
         }
 
         return lastResult;
+    }
+
+    private boolean isStopLossReached(TradingEvaluationContext context) {
+        return investmentProperties.getStopLoss().isEnabled()
+                && context.getProfitRate().compareTo(investmentProperties.getStopLoss().getRate()) <= 0;
     }
 }

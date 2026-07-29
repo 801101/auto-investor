@@ -5,6 +5,7 @@ src/main/resources/*.db
 !auto-investor.db
 !src/main/resources/auto-investor.db
 .env
+src/main/resources/application-local.yml
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/

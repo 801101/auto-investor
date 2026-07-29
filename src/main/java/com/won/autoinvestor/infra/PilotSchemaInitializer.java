@@ -342,9 +342,23 @@ public class PilotSchemaInitializer {
                         updated_at TEXT NOT NULL
                     )
                     """);
+            addColumnIfMissing(connection, "orders", "idempotency_key", "TEXT");
+            addColumnIfMissing(connection, "orders", "decision_cycle_id", "TEXT");
+            addColumnIfMissing(connection, "orders", "instance_id", "TEXT");
+            addColumnIfMissing(connection, "orders", "masked_account", "TEXT");
+            addColumnIfMissing(connection, "orders", "skip_reason", "TEXT");
+            addColumnIfMissing(connection, "orders", "exit_reason", "TEXT");
+            addColumnIfMissing(connection, "orders", "dry_run", "TEXT NOT NULL DEFAULT 'N'");
+            addColumnIfMissing(connection, "orders", "current_price", "TEXT");
+            addColumnIfMissing(connection, "orders", "current_price_at", "TEXT");
             statement.executeUpdate("""
                     CREATE INDEX IF NOT EXISTS idx_orders_stock_status
                     ON orders(stock_code, order_status, updated_at DESC)
+                    """);
+            statement.executeUpdate("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_orders_idempotency_key
+                    ON orders(idempotency_key)
+                    WHERE idempotency_key IS NOT NULL
                     """);
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS price_history (

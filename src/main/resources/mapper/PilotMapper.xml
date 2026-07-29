@@ -218,6 +218,25 @@
         WHERE active = 'Y'
     </select>
 
+    <select id="countOrdersRequestedBetween" resultType="int">
+        SELECT COUNT(*)
+        FROM orders
+        WHERE requested_at &gt;= #{from}
+          AND requested_at &lt; #{to}
+    </select>
+
+    <select id="sumActiveInvestedAmount" resultType="string">
+        SELECT COALESCE(SUM(CAST(invested_amount AS REAL)), 0)
+        FROM positions
+        WHERE active = 'Y'
+    </select>
+
+    <select id="countRecentFailedOrders" resultType="int">
+        SELECT COUNT(*)
+        FROM orders
+        WHERE order_status IN ('FAILED', 'REJECTED')
+    </select>
+
     <insert id="insertOrderRecord">
         INSERT INTO orders (
             broker_order_id,
@@ -243,6 +262,66 @@
             #{errorMessage},
             #{requestedAt},
             #{requestedAt}
+        )
+    </insert>
+
+    <select id="countOrderByIdempotencyKey" resultType="int">
+        SELECT COUNT(*)
+        FROM orders
+        WHERE idempotency_key = #{idempotencyKey}
+    </select>
+
+    <select id="selectOrderStatusByIdempotencyKey" resultType="string">
+        SELECT order_status
+        FROM orders
+        WHERE idempotency_key = #{idempotencyKey}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <insert id="insertOrderRecordDetailed">
+        INSERT INTO orders (
+            broker_order_id,
+            stock_code,
+            order_type,
+            order_quantity,
+            order_price,
+            order_amount,
+            order_status,
+            retry_count,
+            error_message,
+            requested_at,
+            updated_at,
+            idempotency_key,
+            decision_cycle_id,
+            instance_id,
+            masked_account,
+            skip_reason,
+            exit_reason,
+            dry_run,
+            current_price,
+            current_price_at
+        ) VALUES (
+            #{brokerOrderId},
+            #{stockCode},
+            #{orderType},
+            #{orderQuantity},
+            #{orderPrice},
+            #{orderAmount},
+            #{orderStatus},
+            0,
+            #{errorMessage},
+            #{requestedAt},
+            #{requestedAt},
+            #{idempotencyKey},
+            #{decisionCycleId},
+            #{instanceId},
+            #{maskedAccount},
+            #{skipReason},
+            #{exitReason},
+            #{dryRun},
+            #{currentPrice},
+            #{currentPriceAt}
         )
     </insert>
 

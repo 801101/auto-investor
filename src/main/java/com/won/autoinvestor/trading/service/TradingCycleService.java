@@ -2,6 +2,8 @@ package com.won.autoinvestor.trading.service;
 
 import com.won.autoinvestor.pilot.mapper.PilotMapper;
 import com.won.autoinvestor.trading.config.InvestmentProperties;
+import com.won.autoinvestor.trading.config.RuntimeProperties;
+import com.won.autoinvestor.trading.market.MarketSessionService;
 import com.won.autoinvestor.trading.schedule.SchedulerLockService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,20 +23,41 @@ public class TradingCycleService {
     private final AccountSynchronizationService accountSynchronizationService;
     private final PilotMapper pilotMapper;
     private final InvestmentProperties investmentProperties;
+    private final RuntimeProperties runtimeProperties;
+    private final MarketSessionService marketSessionService;
 
     public TradingCycleService(SchedulerLockService schedulerLockService,
                                AccountSynchronizationService accountSynchronizationService,
                                PilotMapper pilotMapper,
-                               InvestmentProperties investmentProperties) {
+                               InvestmentProperties investmentProperties,
+                               RuntimeProperties runtimeProperties,
+                               MarketSessionService marketSessionService) {
         this.schedulerLockService = schedulerLockService;
         this.accountSynchronizationService = accountSynchronizationService;
         this.pilotMapper = pilotMapper;
         this.investmentProperties = investmentProperties;
+        this.runtimeProperties = runtimeProperties;
+        this.marketSessionService = marketSessionService;
     }
 
     public void runTradingCycle() {
         runLocked(SCHEDULER_TYPE, () -> {
-            logger.info("trading cycle started. liveTradingEnabled={}", investmentProperties.isLiveTradingEnabled());
+            logger.info("trading cycle started. instanceId={}, tradingEnabled={}, liveTradingEnabled={}",
+                    runtimeProperties.getInstanceId(),
+                    runtimeProperties.isTradingEnabled(),
+                    investmentProperties.isLiveTradingEnabled());
+            if (!runtimeProperties.isTradingEnabled()) {
+                pilotMapper.insertAuditLog("TRADING_CYCLE_SKIPPED", null,
+                        "runtime.trading-enabled=false", now());
+                logger.info("trading cycle skipped because runtime.trading-enabled=false");
+                return;
+            }
+            if (!marketSessionService.isRegularOrderTimeNow()) {
+                pilotMapper.insertAuditLog("TRADING_CYCLE_SKIPPED", null,
+                        "market is closed for new buy and strategy sell decisions", now());
+                logger.info("trading cycle skipped because market is closed for order decisions");
+                return;
+            }
             accountSynchronizationService.syncAccount();
             pilotMapper.insertAuditLog("TRADING_CYCLE_TODO", null,
                     "TODO: sync open orders, sync prices, evaluate states, sell BLACK, generate candidates, dry-run buy", now());

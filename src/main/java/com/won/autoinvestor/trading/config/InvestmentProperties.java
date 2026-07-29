@@ -7,15 +7,29 @@ import java.math.BigDecimal;
 @ConfigurationProperties(prefix = "investment")
 public class InvestmentProperties {
 
+    private String orderUnitType = "AMOUNT";
     private BigDecimal unitAmount = new BigDecimal("1000");
+    private BigDecimal unitShares = BigDecimal.ONE;
+    private boolean allowDuplicateStock = false;
+    private int maxHoldingStocks = 50;
     private int maxHoldings = 0;
     private int maxPerStock = 1;
     private boolean includeEtf = false;
     private BigDecimal takeProfitRate = new BigDecimal("0.10");
+    private RatePolicy takeProfit = new RatePolicy(true, new BigDecimal("0.10"));
+    private RatePolicy stopLoss = new RatePolicy(false, new BigDecimal("-0.10"));
     private int grayMaxTradingDays = 3;
     private boolean liveTradingEnabled = false;
     private int orderMaxRetryCount = 3;
     private long orderRetryIntervalSeconds = 30;
+
+    public String getOrderUnitType() {
+        return orderUnitType;
+    }
+
+    public void setOrderUnitType(String orderUnitType) {
+        this.orderUnitType = orderUnitType;
+    }
 
     public BigDecimal getUnitAmount() {
         return unitAmount;
@@ -23,6 +37,30 @@ public class InvestmentProperties {
 
     public void setUnitAmount(BigDecimal unitAmount) {
         this.unitAmount = unitAmount;
+    }
+
+    public BigDecimal getUnitShares() {
+        return unitShares;
+    }
+
+    public void setUnitShares(BigDecimal unitShares) {
+        this.unitShares = unitShares;
+    }
+
+    public boolean isAllowDuplicateStock() {
+        return allowDuplicateStock;
+    }
+
+    public void setAllowDuplicateStock(boolean allowDuplicateStock) {
+        this.allowDuplicateStock = allowDuplicateStock;
+    }
+
+    public int getMaxHoldingStocks() {
+        return maxHoldingStocks;
+    }
+
+    public void setMaxHoldingStocks(int maxHoldingStocks) {
+        this.maxHoldingStocks = maxHoldingStocks;
     }
 
     public int getMaxHoldings() {
@@ -50,11 +88,30 @@ public class InvestmentProperties {
     }
 
     public BigDecimal getTakeProfitRate() {
+        if (takeProfit != null && takeProfit.getRate() != null) {
+            return takeProfit.getRate();
+        }
         return takeProfitRate;
     }
 
     public void setTakeProfitRate(BigDecimal takeProfitRate) {
         this.takeProfitRate = takeProfitRate;
+    }
+
+    public RatePolicy getTakeProfit() {
+        return takeProfit;
+    }
+
+    public void setTakeProfit(RatePolicy takeProfit) {
+        this.takeProfit = takeProfit;
+    }
+
+    public RatePolicy getStopLoss() {
+        return stopLoss;
+    }
+
+    public void setStopLoss(RatePolicy stopLoss) {
+        this.stopLoss = stopLoss;
     }
 
     public int getGrayMaxTradingDays() {
@@ -87,5 +144,35 @@ public class InvestmentProperties {
 
     public void setOrderRetryIntervalSeconds(long orderRetryIntervalSeconds) {
         this.orderRetryIntervalSeconds = orderRetryIntervalSeconds;
+    }
+
+    public static class RatePolicy {
+
+        private boolean enabled;
+        private BigDecimal rate;
+
+        public RatePolicy() {
+        }
+
+        public RatePolicy(boolean enabled, BigDecimal rate) {
+            this.enabled = enabled;
+            this.rate = rate;
+        }
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public BigDecimal getRate() {
+            return rate;
+        }
+
+        public void setRate(BigDecimal rate) {
+            this.rate = rate;
+        }
     }
 }
