@@ -1,108 +1,80 @@
 spring:
     config:
-        # Git에 올리지 않는 로컬 민감정보 파일입니다.
-        # 위치: src/main/resources/application-local.yml
+        # 로컬 비밀 설정은 application-local.yml에서 덮어씁니다.
         import: optional:classpath:application-local.yml
     application:
+        # 애플리케이션 이름입니다.
         name: auto-investor
     datasource:
-        # 로컬 SQLite DB 파일입니다. 필요하면 AUTO_INVESTOR_DB_URL로 경로를 바꾸십시오.
-        url: ${AUTO_INVESTOR_DB_URL:jdbc:sqlite:./auto-investor.db}
+        # SQLite DB 파일 위치입니다.
+        url: ${AUTO_INVESTOR_DB_URL:jdbc:sqlite:./src/main/resources/auto-investor.db}
+        # SQLite JDBC 드라이버입니다.
         driver-class-name: org.sqlite.JDBC
 
 mybatis:
-    # 기존 MyBatis XML Mapper 방식을 유지합니다.
+    # MyBatis XML Mapper 위치입니다.
     mapper-locations: classpath:mapper/**/*.xml
     configuration:
+        # SQL alias를 그대로 Map key로 사용합니다.
         map-underscore-to-camel-case: false
 
-investment:
-    # 실전 주문 허용 여부입니다. 기본 false면 한국투자증권 주문 API를 호출하지 않고 Dry Run만 기록합니다.
-    live-trading-enabled: ${INVESTMENT_LIVE_TRADING_ENABLED:false}
-
-    # AMOUNT=돈으로 구매, SHARE=주 수로 구매입니다. 기본은 1,000원 금액 주문입니다.
-    order-unit-type: ${INVESTMENT_ORDER_UNIT_TYPE:AMOUNT}
-
-    # order-unit-type=AMOUNT일 때 1회 목표 구매 금액입니다.
-    unit-amount: ${INVESTMENT_UNIT_AMOUNT:1000}
-
-    # order-unit-type=SHARE일 때 1회 목표 구매 주 수입니다.
-    unit-shares: ${INVESTMENT_UNIT_SHARES:1}
-
-    # 중복 매수와 최대보유수입니다.
-    # max-holdings는 종목 수가 아니라 중복을 포함한 전체 보유 주 수 제한입니다.
-    # 예: 한 종목을 50주 보유했고 max-holdings=50이면 신규 매수는 중단됩니다.
-    allow-duplicate-stock: ${INVESTMENT_ALLOW_DUPLICATE_STOCK:false}
-    max-holdings: ${INVESTMENT_MAX_HOLDINGS:50}
-
-    include-etf: ${INVESTMENT_INCLUDE_ETF:false}
-
-    # 익절/손절은 별도 정책입니다. 손절률은 반드시 음수여야 합니다.
-    take-profit-rate: ${INVESTMENT_TAKE_PROFIT_RATE:0.10}
-    take-profit:
-        enabled: ${INVESTMENT_TAKE_PROFIT_ENABLED:true}
-        rate: ${INVESTMENT_TAKE_PROFIT_RATE:0.10}
-    stop-loss:
-        enabled: ${INVESTMENT_STOP_LOSS_ENABLED:false}
-        rate: ${INVESTMENT_STOP_LOSS_RATE:-0.10}
-
-    # GRAY 유지 거래일과 주문 재시도 정책입니다.
-    gray-max-trading-days: ${INVESTMENT_GRAY_MAX_TRADING_DAYS:3}
-    order-max-retry-count: ${INVESTMENT_ORDER_MAX_RETRY_COUNT:3}
-    order-retry-interval-seconds: ${INVESTMENT_ORDER_RETRY_INTERVAL_SECONDS:30}
-
 runtime:
-    # 주문 판단 사이클을 실행할 인스턴스 식별자와 전체 매매 판단 스위치입니다.
-    instance-id: ${INSTANCE_ID:local-01}
+    # true면 스케줄러가 주문 판단을 실행합니다.
     trading-enabled: ${TRADING_ENABLED:false}
 
-market:
-    # 정규장 주문 판단 시간입니다. 서버 기본 타임존 대신 이 값을 사용합니다.
-    timezone: ${MARKET_TIMEZONE:Asia/Seoul}
-    regular-open-time: ${MARKET_REGULAR_OPEN_TIME:09:00}
-    regular-close-time: ${MARKET_REGULAR_CLOSE_TIME:15:20}
-    allow-pre-market-order: ${MARKET_ALLOW_PRE_MARKET_ORDER:false}
-    allow-after-hours-order: ${MARKET_ALLOW_AFTER_HOURS_ORDER:false}
+investment:
+    market:
+        # DOMESTIC=국내, OVERSEAS=해외
+        type: ${INVESTMENT_MARKET_TYPE:OVERSEAS}
+        # 국내 시장 범위입니다. ALL/KOSPI/KOSDAQ
+        domestic-market-code: ${INVESTMENT_DOMESTIC_MARKET_CODE:ALL}
+        # 해외 주문 거래소 코드입니다.
+        overseas-exchange-code: ${INVESTMENT_OVERSEAS_EXCHANGE_CODE:NASD}
+        # 해외 현재가 조회 거래소 코드입니다.
+        overseas-price-exchange-code: ${INVESTMENT_OVERSEAS_PRICE_EXCHANGE_CODE:NAS}
+        # 해외 거래 통화입니다.
+        overseas-currency-code: ${INVESTMENT_OVERSEAS_CURRENCY_CODE:USD}
 
-safety:
-    # 주문 직전 차단 스위치입니다. kill switch가 true면 신규 실전/DryRun 주문 판단을 막습니다.
-    kill-switch-enabled: ${SAFETY_KILL_SWITCH_ENABLED:false}
-    reject-order-when-balance-sync-failed: ${SAFETY_REJECT_ORDER_WHEN_BALANCE_SYNC_FAILED:true}
-    reject-order-when-price-stale-seconds: ${SAFETY_REJECT_ORDER_WHEN_PRICE_STALE_SECONDS:30}
-    reject-order-when-account-mismatch: ${SAFETY_REJECT_ORDER_WHEN_ACCOUNT_MISMATCH:true}
+    order:
+        # AMOUNT=금액 기준, SHARE=주 수 기준
+        unit-type: ${INVESTMENT_ORDER_UNIT_TYPE:SHARE}
+        # AMOUNT 주문 기준 금액입니다.
+        unit-amount: ${INVESTMENT_UNIT_AMOUNT:1.00}
+        # SHARE 주문 기준 주 수입니다.
+        unit-shares: ${INVESTMENT_UNIT_SHARES:1}
+
+    holding:
+        # 같은 종목 총 구매 허용 횟수입니다. 0은 무제한입니다.
+        allow-duplicate-stock: ${INVESTMENT_ALLOW_DUPLICATE_STOCK:1}
+        # 중복 포함 전체 보유 슬롯입니다. 0은 무제한입니다.
+        max-holdings: ${INVESTMENT_MAX_HOLDINGS:50}
+
+    candidate:
+        # true면 ETF/ETP도 후보에 포함합니다.
+        include-etf: ${INVESTMENT_INCLUDE_ETF:false}
+
+    strategy:
+        take-profit:
+            # true면 익절 조건을 사용합니다.
+            enabled: ${INVESTMENT_TAKE_PROFIT_ENABLED:true}
+            # BLACK 전환 익절률입니다.
+            rate: ${INVESTMENT_TAKE_PROFIT_RATE:0.10}
+        stop-loss:
+            # true면 손절 조건을 사용합니다.
+            enabled: ${INVESTMENT_STOP_LOSS_ENABLED:true}
+            # BLACK 전환 손절률입니다.
+            rate: ${INVESTMENT_STOP_LOSS_RATE:-0.10}
+        # GRAY 유지 최대 거래일입니다.
+        gray-max-trading-days: ${INVESTMENT_GRAY_MAX_TRADING_DAYS:3}
 
 kis:
-    # 민감정보 4개는 application-local.yml 또는 환경변수로만 넣으십시오.
+    # PAPER=모의투자, REAL=실전투자
+    account-mode: ${KIS_ACCOUNT_MODE:PAPER}
+    # KIS App Key입니다. 로컬 파일이나 환경변수로 넣습니다.
     app-key: ${KIS_APP_KEY:}
+    # KIS App Secret입니다. Git에 올리지 않습니다.
     app-secret: ${KIS_APP_SECRET:}
+    # KIS 계좌번호 앞 8자리입니다.
     account-number: ${KIS_ACCOUNT_NUMBER:}
+    # KIS 계좌상품코드 2자리입니다.
     account-product-code: ${KIS_ACCOUNT_PRODUCT_CODE:}
-
-    # 아래 값은 공식 KIS 문서와 계좌 환경에 맞지 않으면 application-local.yml에서 덮어쓰십시오.
-    base-url: ${KIS_BASE_URL:https://openapi.koreainvestment.com:9443}
-    token-path: ${KIS_TOKEN_PATH:/oauth2/tokenP}
-    current-price-path: ${KIS_CURRENT_PRICE_PATH:/uapi/domestic-stock/v1/quotations/inquire-price}
-    balance-path: ${KIS_BALANCE_PATH:/uapi/domestic-stock/v1/trading/inquire-balance}
-    order-cash-path: ${KIS_ORDER_CASH_PATH:/uapi/domestic-stock/v1/trading/order-cash}
-    current-price-tr-id: ${KIS_CURRENT_PRICE_TR_ID:FHKST01010100}
-    balance-tr-id: ${KIS_BALANCE_TR_ID:TTTC8434R}
-    buy-tr-id: ${KIS_BUY_TR_ID:TTTC0802U}
-    sell-tr-id: ${KIS_SELL_TR_ID:TTTC0801U}
-    customer-type: ${KIS_CUSTOMER_TYPE:P}
-    market-division-code: ${KIS_MARKET_DIVISION_CODE:J}
-    order-division: ${KIS_ORDER_DIVISION:01}
-
-scheduler:
-    trading-cycle-cron: ${TRADING_CYCLE_CRON:0 0,20,40 * * * *}
-    maintenance-fixed-delay-ms: ${MAINTENANCE_FIXED_DELAY_MS:300000}
-
-legacy-pilot:
-    # 기존 파일럿 로직은 삭제하지 않고 기본 비활성화합니다.
-    enabled: ${LEGACY_PILOT_ENABLED:false}
-
-pilot:
-    cycle:
-        fixed-delay-ms: ${PILOT_CYCLE_FIXED_DELAY_MS:30000}
-    lifecycle:
-        rotation-fixed-delay-ms: ${PILOT_LIFECYCLE_ROTATION_FIXED_DELAY_MS:300000}
-        market-start-cron: ${PILOT_MARKET_START_CRON:0 0 9 * * MON-FRI}

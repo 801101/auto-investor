@@ -2,9 +2,8 @@
 build/
 src/main/resources/*.db
 *.db
-!auto-investor.db
-!src/main/resources/auto-investor.db
 .env
+.kis-access-token-cache.properties
 src/main/resources/application-local.yml
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/

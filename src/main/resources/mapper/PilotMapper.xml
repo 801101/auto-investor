@@ -3,76 +3,8 @@
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 
-<mapper namespace="com.won.autoinvestor.pilot.mapper.PilotMapper">
+<mapper namespace="com.won.autoinvestor.pilot.PilotMapper">
 
-    <select id="selectLatestMarketTicks" resultType="com.won.autoinvestor.pilot.domain.PilotMarketTick">
-        SELECT
-            t.id,
-            t.symbol,
-            t.market_currency AS marketCurrency,
-            t.last_price AS lastPrice,
-            t.bid_price AS bidPrice,
-            t.ask_price AS askPrice,
-            t.traded_at AS tradedAt,
-            t.received_at AS receivedAt
-        FROM pilot_market_ticks t
-        INNER JOIN (
-            SELECT symbol, MAX(id) AS id
-            FROM pilot_market_ticks
-            GROUP BY symbol
-        ) latest
-            ON latest.id = t.id
-        ORDER BY t.symbol
-    </select>
-
-    <select id="selectOpenPositionBySymbol" resultType="com.won.autoinvestor.pilot.domain.PilotPosition">
-        SELECT
-            id,
-            symbol,
-            market_currency AS marketCurrency,
-            quantity,
-            invested_amount AS investedAmount,
-            average_entry_price AS averageEntryPrice,
-            status,
-            opened_at AS openedAt,
-            updated_at AS updatedAt,
-            closed_at AS closedAt
-        FROM pilot_positions
-        WHERE symbol = #{symbol}
-          AND status = 'OPEN'
-        LIMIT 1
-    </select>
-
-    <select id="countGlobalHeldSymbol" resultType="int">
-        SELECT
-            (
-                SELECT COUNT(*)
-                FROM pilot_positions
-                WHERE symbol = #{symbol}
-                  AND status = 'OPEN'
-            )
-            +
-            (
-                SELECT COUNT(*)
-                FROM active_status_tracker
-                WHERE symbol = #{symbol}
-                  AND status IN ('WHITE', 'GRAY', 'BLACK')
-            )
-            +
-            (
-                SELECT COUNT(*)
-                FROM "파일럿_잔고"
-                WHERE "종목" = #{symbol}
-                  AND "상태" = '보유'
-            )
-            +
-            (
-                SELECT COUNT(*)
-                FROM "오토봇_잔고"
-                WHERE "종목" = #{symbol}
-                  AND "상태" = '보유'
-            )
-    </select>
 
     <select id="countActivePanicStop" resultType="int">
         SELECT COUNT(*)
@@ -80,136 +12,34 @@
         WHERE active = 'Y'
     </select>
 
-    <select id="selectLifecycleIntegrityMismatches" resultType="com.won.autoinvestor.pilot.domain.TradingLifecycleTarget">
-        SELECT
-            tracker.id,
-            tracker.trading_history_master_id AS masterId,
-            tracker.system_type AS systemType,
-            tracker.symbol,
-            tracker.market_currency AS marketCurrency,
-            tracker.entry_price AS entryPrice,
-            tracker.entry_quantity AS entryQuantity,
-            tracker.entry_amount AS entryAmount,
-            tracker.entry_time AS entryTime,
-            tracker.status,
-            tracker.status_entered_at AS statusEnteredAt,
-            tracker.gray_entered_at AS grayEnteredAt,
-            tracker.force_liquidation_flag AS forceLiquidationFlag,
-            tracker.updated_at AS updatedAt,
-            master.status AS masterStatus,
-            master.sell_time AS masterSellTime,
-            NULL AS lastPrice,
-            NULL AS tradedAt
-        FROM active_status_tracker tracker
-        LEFT JOIN trading_history_master master
-            ON master.id = tracker.trading_history_master_id
-        WHERE tracker.status IN ('WHITE', 'GRAY', 'BLACK')
-          AND (
-              tracker.trading_history_master_id IS NULL
-              OR master.id IS NULL
-              OR master.status != 'OPEN'
-              OR master.sell_time IS NOT NULL
-          )
-        UNION ALL
-        SELECT
-            NULL AS id,
-            master.id AS masterId,
-            master.system_type AS systemType,
-            master.symbol,
-            master.market_currency AS marketCurrency,
-            master.buy_price AS entryPrice,
-            master.buy_quantity AS entryQuantity,
-            master.buy_amount AS entryAmount,
-            master.buy_time AS entryTime,
-            'MISSING_TRACKER' AS status,
-            master.updated_at AS statusEnteredAt,
-            NULL AS grayEnteredAt,
-            master.force_liquidation_flag AS forceLiquidationFlag,
-            master.updated_at AS updatedAt,
-            master.status AS masterStatus,
-            master.sell_time AS masterSellTime,
-            NULL AS lastPrice,
-            NULL AS tradedAt
-        FROM trading_history_master master
-        LEFT JOIN active_status_tracker tracker
-            ON tracker.trading_history_master_id = master.id
-           AND tracker.status IN ('WHITE', 'GRAY', 'BLACK')
-        WHERE master.status = 'OPEN'
-          AND tracker.id IS NULL
-        ORDER BY systemType, symbol, masterId
-    </select>
-
-    <insert id="insertPanicStopEvent">
-        INSERT INTO panic_stop_events (
-            reason,
-            detail,
-            alert_status,
-            active,
-            created_at
-        ) VALUES (
-            #{reason},
-            #{detail},
-            'ALERT_REQUIRED',
-            'Y',
-            #{createdAt}
-        )
-    </insert>
-
-    <select id="sumOpenBuyAmountBySystemType" resultType="string">
-        SELECT COALESCE(SUM(CAST(buy_amount AS REAL)), 0)
-        FROM trading_history_master
-        WHERE system_type = #{systemType}
-          AND market_currency = #{marketCurrency}
-          AND status = 'OPEN'
-          AND sell_time IS NULL
-    </select>
-
-    <select id="selectActiveBudgetCurrencies" resultType="string">
-        SELECT DISTINCT market_currency
-        FROM trading_history_master
-        WHERE status = 'OPEN'
-        UNION
-        SELECT DISTINCT market_currency
-        FROM active_status_tracker
-        WHERE status IN ('WHITE', 'GRAY', 'BLACK')
-    </select>
-
-    <insert id="insertBudgetAllocationSnapshot">
-        INSERT INTO budget_allocation_snapshots (
-            market_currency,
-            total_wallet_balance,
-            pilot_budget,
-            autobot_budget,
-            pilot_used_amount,
-            autobot_used_amount,
-            pilot_available_amount,
-            autobot_available_amount,
-            calculated_at
-        ) VALUES (
-            #{marketCurrency},
-            #{totalWalletBalance},
-            #{pilotBudget},
-            #{autobotBudget},
-            #{pilotUsedAmount},
-            #{autobotUsedAmount},
-            #{pilotAvailableAmount},
-            #{autobotAvailableAmount},
-            #{calculatedAt}
-        )
-    </insert>
-
-    <select id="countActivePositionByStockCode" resultType="int">
-        SELECT COUNT(*)
+    <select id="sumActiveHoldingQuantityByStockCode" resultType="string">
+        SELECT COALESCE(SUM(CAST(COALESCE(holding_quantity, purchase_quantity) AS REAL)), 0)
         FROM positions
         WHERE stock_code = #{stockCode}
           AND active = 'Y'
     </select>
 
-    <select id="countOpenOrderByStockCode" resultType="int">
-        SELECT COUNT(*)
+    <select id="sumOpenBuyOrderQuantityByStockCode" resultType="string">
+        SELECT COALESCE(SUM(CAST(order_quantity AS REAL)), 0)
         FROM orders
         WHERE stock_code = #{stockCode}
-          AND order_status IN ('REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+          AND order_type = 'BUY'
+          AND order_status IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+    </select>
+
+    <select id="sumActiveInvestedAmountByStockCode" resultType="string">
+        SELECT COALESCE(SUM(CAST(invested_amount AS REAL)), 0)
+        FROM positions
+        WHERE stock_code = #{stockCode}
+          AND active = 'Y'
+    </select>
+
+    <select id="sumOpenBuyOrderAmountByStockCode" resultType="string">
+        SELECT COALESCE(SUM(CAST(order_amount AS REAL)), 0)
+        FROM orders
+        WHERE stock_code = #{stockCode}
+          AND order_type = 'BUY'
+          AND order_status IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
     </select>
 
     <select id="countActivePositions" resultType="int">
@@ -217,6 +47,87 @@
         FROM positions
         WHERE active = 'Y'
     </select>
+
+    <select id="selectActivePositionIdByStockCode" resultType="long">
+        SELECT id
+        FROM positions
+        WHERE stock_code = #{stockCode}
+          AND active = 'Y'
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <insert id="insertSyncedPosition">
+        INSERT INTO positions (
+            stock_code,
+            stock_name,
+            status,
+            purchase_price,
+            purchase_quantity,
+            invested_amount,
+            current_price,
+            current_valuation_amount,
+            profit_rate,
+            last_evaluated_price,
+            status_reference_price,
+            gray_trading_days,
+            average_buy_price,
+            reference_price,
+            highest_price,
+            lowest_price,
+            holding_quantity,
+            return_rate,
+            last_evaluated_at,
+            active,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{stockCode},
+            #{stockName},
+            #{status},
+            #{purchasePrice},
+            #{purchaseQuantity},
+            #{investedAmount},
+            #{currentPrice},
+            #{currentValuationAmount},
+            #{profitRate},
+            #{lastEvaluatedPrice},
+            #{statusReferencePrice},
+            #{grayTradingDays},
+            #{averageBuyPrice},
+            #{referencePrice},
+            #{highestPrice},
+            #{lowestPrice},
+            #{holdingQuantity},
+            #{returnRate},
+            #{lastEvaluatedAt},
+            'Y',
+            #{createdAt},
+            #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateSyncedPosition">
+        UPDATE positions
+        SET stock_name = #{stockName},
+            purchase_price = #{purchasePrice},
+            purchase_quantity = #{purchaseQuantity},
+            invested_amount = #{investedAmount},
+            current_price = #{currentPrice},
+            current_valuation_amount = #{currentValuationAmount},
+            profit_rate = #{profitRate},
+            last_evaluated_price = #{lastEvaluatedPrice},
+            status_reference_price = COALESCE(status_reference_price, #{statusReferencePrice}),
+            average_buy_price = #{averageBuyPrice},
+            reference_price = COALESCE(reference_price, #{referencePrice}),
+            highest_price = MAX(CAST(COALESCE(highest_price, #{highestPrice}) AS REAL), CAST(#{highestPrice} AS REAL)),
+            lowest_price = MIN(CAST(COALESCE(lowest_price, #{lowestPrice}) AS REAL), CAST(#{lowestPrice} AS REAL)),
+            holding_quantity = #{holdingQuantity},
+            return_rate = #{returnRate},
+            last_evaluated_at = #{lastEvaluatedAt},
+            updated_at = #{updatedAt}
+        WHERE id = #{positionId}
+    </update>
 
     <select id="sumActiveHoldingQuantity" resultType="string">
         SELECT COALESCE(SUM(CAST(COALESCE(holding_quantity, purchase_quantity) AS REAL)), 0)
@@ -228,52 +139,8 @@
         SELECT COALESCE(SUM(CAST(order_quantity AS REAL)), 0)
         FROM orders
         WHERE order_type = 'BUY'
-          AND order_status IN ('REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+          AND order_status IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
     </select>
-
-    <update id="updatePositionLifecycleSnapshot">
-        UPDATE positions
-        SET status = #{status},
-            current_price = #{currentPrice},
-            average_buy_price = #{averageBuyPrice},
-            reference_price = #{referencePrice},
-            highest_price = #{highestPrice},
-            lowest_price = #{lowestPrice},
-            holding_quantity = #{holdingQuantity},
-            return_rate = #{returnRate},
-            gray_trading_days = #{grayTradingDays},
-            last_evaluated_at = #{lastEvaluatedAt},
-            updated_at = #{updatedAt}
-        WHERE id = #{positionId}
-    </update>
-
-    <insert id="insertOrderRecord">
-        INSERT INTO orders (
-            broker_order_id,
-            stock_code,
-            order_type,
-            order_quantity,
-            order_price,
-            order_amount,
-            order_status,
-            retry_count,
-            error_message,
-            requested_at,
-            updated_at
-        ) VALUES (
-            #{brokerOrderId},
-            #{stockCode},
-            #{orderType},
-            #{orderQuantity},
-            #{orderPrice},
-            #{orderAmount},
-            #{orderStatus},
-            0,
-            #{errorMessage},
-            #{requestedAt},
-            #{requestedAt}
-        )
-    </insert>
 
     <select id="countOrderByIdempotencyKey" resultType="int">
         SELECT COUNT(*)
@@ -288,6 +155,30 @@
         ORDER BY id DESC
         LIMIT 1
     </select>
+
+    <update id="updateOrderBrokerResultByIdempotencyKey">
+        UPDATE orders
+        SET broker_order_id = #{brokerOrderId},
+            order_status = #{orderStatus},
+            error_message = #{errorMessage},
+            updated_at = #{updatedAt}
+        WHERE idempotency_key = #{idempotencyKey}
+    </update>
+
+    <delete id="deleteOrderByIdempotencyKey">
+        DELETE FROM orders
+        WHERE idempotency_key = #{idempotencyKey}
+    </delete>
+
+    <update id="markAcceptedBuyOrdersFilledByStockCode">
+        UPDATE orders
+        SET order_status = 'FILLED',
+            filled_at = COALESCE(filled_at, #{filledAt}),
+            updated_at = #{filledAt}
+        WHERE stock_code = #{stockCode}
+          AND order_type = 'BUY'
+          AND order_status = 'ACCEPTED'
+    </update>
 
     <insert id="insertOrderRecordDetailed">
         INSERT INTO orders (
@@ -405,493 +296,637 @@
         )
     </insert>
 
-    <insert id="insertOpenPosition">
-        INSERT INTO pilot_positions (
-            symbol,
-            market_currency,
-            quantity,
-            invested_amount,
-            average_entry_price,
-            status,
-            opened_at,
-            updated_at
-        ) VALUES (
-            #{symbol},
-            #{marketCurrency},
-            #{quantity},
-            #{investedAmount},
-            #{averageEntryPrice},
-            #{status},
-            #{openedAt},
-            #{updatedAt}
-        )
-    </insert>
 
-    <insert id="insertPilotBalance">
-        INSERT INTO "파일럿_잔고" (
-            "종목",
-            "통화",
-            "수량",
-            "투입금액",
-            "평균진입가",
-            "상태",
-            "진입시각",
-            "갱신시각"
-        ) VALUES (
-            #{symbol},
-            #{marketCurrency},
-            #{quantity},
-            #{investedAmount},
-            #{averageEntryPrice},
-            '보유',
-            #{openedAt},
-            #{updatedAt}
-        )
-    </insert>
 
-    <update id="touchOpenPosition">
-        UPDATE pilot_positions
-        SET updated_at = #{updatedAt}
-        WHERE id = #{id}
-          AND status = 'OPEN'
-    </update>
 
-    <update id="touchPilotBalance">
-        UPDATE "파일럿_잔고"
-        SET "갱신시각" = #{updatedAt}
-        WHERE "종목" = #{symbol}
-          AND "상태" = '보유'
-    </update>
+    <sql id="domesticMarketFilter">
+        (#{marketCode} = 'ALL' OR market_code = #{marketCode})
+    </sql>
 
-    <insert id="insertOrderIntent">
-        INSERT INTO pilot_order_intents (
-            symbol,
-            market_currency,
-            side,
-            order_amount,
-            order_quantity,
-            reference_price,
-            reason,
-            status,
-            created_at
-        ) VALUES (
-            #{symbol},
-            #{marketCurrency},
-            #{side},
-            #{orderAmount},
-            #{orderQuantity},
-            #{referencePrice},
-            #{reason},
-            #{status},
-            #{createdAt}
-        )
-    </insert>
-
-    <insert id="insertObservation">
-        INSERT INTO pilot_observations (
-            symbol,
-            market_currency,
-            market_state,
-            entry_pattern,
-            position_status,
-            survival_seconds,
-            observed_at
-        ) VALUES (
-            #{symbol},
-            #{marketCurrency},
-            #{marketState},
-            #{entryPattern},
-            #{positionStatus},
-            #{survivalSeconds},
-            #{observedAt}
-        )
-    </insert>
-
-    <insert id="insertMarketObservationData">
-        INSERT INTO "시장_관측_데이터" (
-            "종목",
-            "통화",
-            "시장상태",
-            "진입패턴",
-            "포지션상태",
-            "생존초",
-            "등급",
-            "관측시각"
-        ) VALUES (
-            #{symbol},
-            #{marketCurrency},
-            #{marketState},
-            #{entryPattern},
-            #{positionStatus},
-            #{survivalSeconds},
-            #{grade},
-            #{observedAt}
-        )
-    </insert>
-
-    <select id="selectLatestAssetGrade" resultType="string">
-        SELECT grade
-        FROM asset_grade_decisions
-        WHERE symbol = #{symbol}
-        ORDER BY decided_at DESC, id DESC
-        LIMIT 1
+    <select id="domesticCountMasterRows" resultType="int">
+        SELECT COUNT(*)
+        FROM domestic_stock_master
+        WHERE <include refid="domesticMarketFilter"/>
     </select>
 
-    <insert id="insertAssetGradeDecision">
-        INSERT INTO asset_grade_decisions (
-            symbol,
-            grade,
-            reason,
-            decided_at
-        ) VALUES (
-            #{symbol},
-            #{grade},
-            #{reason},
-            #{decidedAt}
-        )
-    </insert>
+    <select id="domesticCountBuyableCandidates" resultType="int">
+        SELECT COUNT(*)
+        FROM domestic_stock_master
+        WHERE <include refid="domesticMarketFilter"/>
+          AND active = 'Y'
+          AND tradable = 'Y'
+    </select>
 
-    <insert id="insertAutobotBalance">
-        INSERT INTO "오토봇_잔고" (
-            "종목",
-            "통화",
-            "수량",
-            "평균진입가",
-            "상태",
-            "등급",
-            "진입시각",
-            "갱신시각"
-        ) VALUES (
-            #{symbol},
-            #{marketCurrency},
-            #{quantity},
-            #{averageEntryPrice},
-            '보유',
-            #{grade},
-            #{createdAt},
-            #{createdAt}
-        )
-    </insert>
-
-    <insert id="insertAutobotOrderIntent">
-        INSERT INTO autobot_order_intents (
+    <insert id="domesticUpsertMaster" parameterType="map">
+        INSERT INTO domestic_stock_master (
             symbol,
-            market_currency,
-            side,
-            share_quantity,
-            reference_price,
-            asset_grade,
-            reason,
-            status,
-            created_at
-        ) VALUES (
-            #{symbol},
-            #{marketCurrency},
-            #{side},
-            #{shareQuantity},
-            #{referencePrice},
-            #{assetGrade},
-            #{reason},
-            #{status},
-            #{createdAt}
-        )
-    </insert>
-
-    <insert id="insertTradingHistoryMaster">
-        INSERT INTO trading_history_master (
-            system_type,
-            symbol,
-            market_currency,
-            buy_price,
-            buy_quantity,
-            buy_amount,
-            buy_time,
-            sell_price,
-            sell_time,
-            pnl_ratio,
-            status,
+            stock_name,
+            market_code,
+            standard_code,
+            security_group_code,
+            etp,
+            spac,
+            tradable,
+            active,
+            last_price,
+            market_cap,
+            trading_volume,
+            excluded_reason,
             created_at,
+            updated_at,
+            last_synced_at
+        ) VALUES (
+            #{symbol},
+            #{stockName},
+            #{marketCode},
+            #{standardCode},
+            #{securityGroupCode},
+            CASE WHEN #{etp} THEN 'Y' ELSE 'N' END,
+            CASE WHEN #{spac} THEN 'Y' ELSE 'N' END,
+            CASE WHEN #{tradable} THEN 'Y' ELSE 'N' END,
+            CASE WHEN #{active} THEN 'Y' ELSE 'N' END,
+            #{lastPrice},
+            #{marketCap},
+            #{tradingVolume},
+            #{excludedReason},
+            #{createdAt},
+            #{updatedAt},
+            #{lastSyncedAt}
+        )
+        ON CONFLICT(symbol, market_code) DO UPDATE SET
+            stock_name = excluded.stock_name,
+            standard_code = excluded.standard_code,
+            security_group_code = excluded.security_group_code,
+            etp = excluded.etp,
+            spac = excluded.spac,
+            tradable = excluded.tradable,
+            active = excluded.active,
+            last_price = excluded.last_price,
+            market_cap = excluded.market_cap,
+            trading_volume = excluded.trading_volume,
+            excluded_reason = excluded.excluded_reason,
+            updated_at = excluded.updated_at,
+            last_synced_at = excluded.last_synced_at
+    </insert>
+
+    <select id="domesticSelectCandidateEvaluations" resultType="map">
+        SELECT
+            m.id,
+            m.symbol,
+            m.stock_name AS stockName,
+            m.market_code AS marketCode,
+            m.security_group_code AS securityGroupCode,
+            m.etp,
+            m.spac,
+            CAST(COALESCE(m.last_price, '0') AS TEXT) AS lastPrice,
+            CAST(COALESCE(m.market_cap, '0') AS TEXT) AS marketCap,
+            CAST(COALESCE(m.trading_volume, '0') AS TEXT) AS tradingVolume,
+            m.last_selected_at AS lastSelectedAt,
+            m.last_buy_attempt_at AS lastBuyAttemptAt,
+            m.last_buy_success_at AS lastBuySuccessAt,
+            m.retry_after AS retryAfter,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM positions p
+                WHERE p.stock_code = m.symbol
+                  AND p.active = 'Y'
+            ), 0) AS completedBuyCount,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM orders o
+                WHERE o.stock_code = m.symbol
+                  AND o.order_type = 'BUY'
+                  AND o.order_status IN ('REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+            ), 0) AS pendingBuyCount,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM orders r
+                WHERE r.stock_code = m.symbol
+                  AND r.order_type = 'BUY'
+                  AND r.order_status = 'ORDERING'
+            ), 0) AS reservedBuyCount,
+            CAST(COALESCE((
+                SELECT SUM(CAST(COALESCE(p.invested_amount, '0') AS REAL))
+                FROM positions p
+                WHERE p.stock_code = m.symbol
+                  AND p.active = 'Y'
+            ), 0) AS TEXT) AS totalInvestedAmount,
+            CAST(COALESCE((
+                SELECT SUM(CAST(COALESCE(o.order_amount, '0') AS REAL))
+                FROM orders o
+                WHERE o.stock_code = m.symbol
+                  AND o.order_type = 'BUY'
+                  AND o.order_status IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+            ), 0) AS TEXT) AS pendingInvestmentAmount
+        FROM domestic_stock_master m
+        WHERE <include refid="domesticMarketFilter"/>
+          AND m.active = 'Y'
+          AND m.tradable = 'Y'
+          AND m.symbol IS NOT NULL
+          AND TRIM(m.symbol) != ''
+    </select>
+
+    <insert id="domesticUpsertDashboardRow" parameterType="map">
+        INSERT INTO domestic_stock_dashboard (
+            symbol,
+            market_code,
+            rank_no,
+            stock_name,
+            candidate_score,
+            purchase_zone,
+            dashboard_status,
+            last_price,
+            completed_buy_count,
+            pending_buy_count,
+            reserved_buy_count,
+            current_duplicate_count,
+            maximum_duplicate_count,
+            remaining_duplicate_count,
+            total_invested_amount,
+            pending_investment_amount,
+            purchasable,
+            exclusion_reason,
+            last_selected_at,
+            last_buy_success_at,
+            retry_after,
+            evaluated_at,
             updated_at
         ) VALUES (
-            #{systemType},
             #{symbol},
-            #{marketCurrency},
-            #{buyPrice},
-            #{buyQuantity},
-            #{buyAmount},
-            #{buyTime},
-            NULL,
-            NULL,
-            NULL,
-            'OPEN',
-            #{createdAt},
-            #{createdAt}
+            #{marketCode},
+            #{rankNo},
+            #{stockName},
+            #{candidateScore},
+            #{purchaseZone},
+            #{dashboardStatus},
+            #{lastPrice},
+            #{completedBuyCount},
+            #{pendingBuyCount},
+            #{reservedBuyCount},
+            #{currentDuplicateCount},
+            #{maximumDuplicateCount},
+            #{remainingDuplicateCount},
+            #{totalInvestedAmount},
+            #{pendingInvestmentAmount},
+            CASE WHEN #{purchasable} THEN 'Y' ELSE 'N' END,
+            #{exclusionReason},
+            #{lastSelectedAt},
+            #{lastBuySuccessAt},
+            #{retryAfter},
+            #{evaluatedAt},
+            #{updatedAt}
         )
+        ON CONFLICT(symbol, market_code) DO UPDATE SET
+            rank_no = excluded.rank_no,
+            stock_name = excluded.stock_name,
+            candidate_score = excluded.candidate_score,
+            purchase_zone = excluded.purchase_zone,
+            dashboard_status = excluded.dashboard_status,
+            last_price = excluded.last_price,
+            completed_buy_count = excluded.completed_buy_count,
+            pending_buy_count = excluded.pending_buy_count,
+            reserved_buy_count = excluded.reserved_buy_count,
+            current_duplicate_count = excluded.current_duplicate_count,
+            maximum_duplicate_count = excluded.maximum_duplicate_count,
+            remaining_duplicate_count = excluded.remaining_duplicate_count,
+            total_invested_amount = excluded.total_invested_amount,
+            pending_investment_amount = excluded.pending_investment_amount,
+            purchasable = excluded.purchasable,
+            exclusion_reason = excluded.exclusion_reason,
+            last_selected_at = excluded.last_selected_at,
+            last_buy_success_at = excluded.last_buy_success_at,
+            retry_after = excluded.retry_after,
+            evaluated_at = excluded.evaluated_at,
+            updated_at = excluded.updated_at
     </insert>
 
-    <insert id="insertActiveStatusTracker">
-        INSERT INTO active_status_tracker (
-            trading_history_master_id,
-            system_type,
-            symbol,
-            market_currency,
-            entry_price,
-            entry_quantity,
-            entry_amount,
-            entry_time,
-            status,
-            status_entered_at,
-            gray_entered_at,
-            force_liquidation_flag,
-            updated_at
-        ) VALUES (
-            #{masterId},
-            #{systemType},
-            #{symbol},
-            #{marketCurrency},
-            #{entryPrice},
-            #{entryQuantity},
-            #{entryAmount},
-            #{entryTime},
-            'WHITE',
-            #{createdAt},
-            NULL,
-            'N',
-            #{createdAt}
-        )
-    </insert>
-
-    <select id="selectLatestOpenTradingHistoryMasterId" resultType="java.lang.Long">
-        SELECT id
-        FROM trading_history_master
-        WHERE system_type = #{systemType}
-          AND symbol = #{symbol}
-          AND buy_time = #{buyTime}
-          AND status = 'OPEN'
-        ORDER BY id DESC
-        LIMIT 1
-    </select>
-
-    <select id="selectLifecycleTargetsWithLatestTicks" resultType="com.won.autoinvestor.pilot.domain.TradingLifecycleTarget">
-        SELECT
-            tracker.id,
-            COALESCE(tracker.trading_history_master_id, master.id) AS masterId,
-            tracker.system_type AS systemType,
-            tracker.symbol,
-            tracker.market_currency AS marketCurrency,
-            tracker.entry_price AS entryPrice,
-            tracker.entry_quantity AS entryQuantity,
-            tracker.entry_amount AS entryAmount,
-            tracker.entry_time AS entryTime,
-            tracker.status,
-            tracker.status_entered_at AS statusEnteredAt,
-            tracker.gray_entered_at AS grayEnteredAt,
-            tracker.force_liquidation_flag AS forceLiquidationFlag,
-            tracker.updated_at AS updatedAt,
-            master.status AS masterStatus,
-            master.sell_time AS masterSellTime,
-            ticks.last_price AS lastPrice,
-            ticks.traded_at AS tradedAt
-        FROM active_status_tracker tracker
-        LEFT JOIN trading_history_master master
-            ON master.id = COALESCE(
-                tracker.trading_history_master_id,
-                (
-                    SELECT fallback.id
-                    FROM trading_history_master fallback
-                    WHERE fallback.system_type = tracker.system_type
-                      AND fallback.symbol = tracker.symbol
-                      AND fallback.status = 'OPEN'
-                    ORDER BY fallback.buy_time ASC, fallback.id ASC
-                    LIMIT 1
-                )
-            )
-        INNER JOIN (
-            SELECT t.symbol, t.last_price, t.traded_at
-            FROM pilot_market_ticks t
-            INNER JOIN (
-                SELECT symbol, MAX(id) AS id
-                FROM pilot_market_ticks
-                GROUP BY symbol
-            ) latest
-                ON latest.id = t.id
-        ) ticks
-            ON ticks.symbol = tracker.symbol
-        WHERE tracker.status IN ('WHITE', 'GRAY', 'BLACK')
-        ORDER BY tracker.system_type, tracker.symbol
-    </select>
-
-    <select id="selectBlackLifecycleTargetsWithLatestTicks" resultType="com.won.autoinvestor.pilot.domain.TradingLifecycleTarget">
-        SELECT
-            tracker.id,
-            COALESCE(tracker.trading_history_master_id, master.id) AS masterId,
-            tracker.system_type AS systemType,
-            tracker.symbol,
-            tracker.market_currency AS marketCurrency,
-            tracker.entry_price AS entryPrice,
-            tracker.entry_quantity AS entryQuantity,
-            tracker.entry_amount AS entryAmount,
-            tracker.entry_time AS entryTime,
-            tracker.status,
-            tracker.status_entered_at AS statusEnteredAt,
-            tracker.gray_entered_at AS grayEnteredAt,
-            tracker.force_liquidation_flag AS forceLiquidationFlag,
-            tracker.updated_at AS updatedAt,
-            master.status AS masterStatus,
-            master.sell_time AS masterSellTime,
-            ticks.last_price AS lastPrice,
-            ticks.traded_at AS tradedAt
-        FROM active_status_tracker tracker
-        LEFT JOIN trading_history_master master
-            ON master.id = COALESCE(
-                tracker.trading_history_master_id,
-                (
-                    SELECT fallback.id
-                    FROM trading_history_master fallback
-                    WHERE fallback.system_type = tracker.system_type
-                      AND fallback.symbol = tracker.symbol
-                      AND fallback.status = 'OPEN'
-                    ORDER BY fallback.buy_time ASC, fallback.id ASC
-                    LIMIT 1
-                )
-            )
-        INNER JOIN (
-            SELECT t.symbol, t.last_price, t.traded_at
-            FROM pilot_market_ticks t
-            INNER JOIN (
-                SELECT symbol, MAX(id) AS id
-                FROM pilot_market_ticks
-                GROUP BY symbol
-            ) latest
-                ON latest.id = t.id
-        ) ticks
-            ON ticks.symbol = tracker.symbol
-        WHERE tracker.status = 'BLACK'
-        ORDER BY tracker.system_type, tracker.symbol
-    </select>
-
-    <update id="updateActiveStatus">
-        UPDATE active_status_tracker
-        SET status = #{status},
-            status_entered_at = #{statusEnteredAt},
-            gray_entered_at = #{grayEnteredAt},
-            force_liquidation_flag = #{forceLiquidationFlag},
-            updated_at = #{updatedAt}
-        WHERE id = #{id}
-    </update>
-
-    <update id="updateTradingHistorySell">
-        UPDATE trading_history_master
-        SET sell_price = #{sellPrice},
-            sell_time = #{sellTime},
-            pnl_ratio = #{pnlRatio},
-            force_liquidation_flag = #{forceLiquidationFlag},
-            integrity_verified_at = #{sellTime},
-            status = 'CLOSED',
-            updated_at = #{sellTime}
-        WHERE id = #{masterId}
-          AND system_type = #{systemType}
-          AND symbol = #{symbol}
-          AND status = 'OPEN'
-          AND sell_price IS NULL
-    </update>
-
-    <insert id="insertTradingStatusHistoryLog">
-        INSERT INTO trading_status_history_log (
-            tracker_id,
-            master_id,
-            system_type,
-            symbol,
-            previous_status,
-            new_status,
-            event_type,
-            reason,
-            force_liquidation_flag,
-            logged_at
-        ) VALUES (
-            #{trackerId},
-            #{masterId},
-            #{systemType},
-            #{symbol},
-            #{previousStatus},
-            #{newStatus},
-            #{eventType},
-            #{reason},
-            #{forceLiquidationFlag},
-            #{loggedAt}
-        )
-    </insert>
-
-    <insert id="insertTrainingDatasetFromMaster">
-        INSERT OR IGNORE INTO trading_training_dataset (
-            master_id,
-            system_type,
-            symbol,
-            market_currency,
-            buy_price,
-            buy_quantity,
-            buy_amount,
-            buy_time,
-            sell_price,
-            sell_time,
-            pnl_ratio,
-            force_liquidation_flag,
-            outcome_status,
-            created_at
-        )
-        SELECT
-            id,
-            system_type,
-            symbol,
-            market_currency,
-            buy_price,
-            buy_quantity,
-            buy_amount,
-            buy_time,
-            sell_price,
-            sell_time,
-            pnl_ratio,
-            force_liquidation_flag,
-            status,
-            #{createdAt}
-        FROM trading_history_master
-        WHERE id = #{masterId}
-          AND status = 'CLOSED'
-          AND sell_price IS NOT NULL
-          AND sell_time IS NOT NULL
-          AND pnl_ratio IS NOT NULL
-    </insert>
-
-    <delete id="deleteActiveStatusTracker">
-        DELETE FROM active_status_tracker
-        WHERE id = #{id}
+    <delete id="domesticDeleteStaleDashboardRows">
+        DELETE FROM domestic_stock_dashboard
+        WHERE (#{marketCode} = 'ALL' OR market_code = #{marketCode})
+          AND evaluated_at != #{evaluatedAt}
+          AND NOT EXISTS (
+              SELECT 1
+              FROM positions p
+              WHERE p.stock_code = domestic_stock_dashboard.symbol
+                AND p.active = 'Y'
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.stock_code = domestic_stock_dashboard.symbol
+                AND o.order_status IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+          )
     </delete>
 
-    <update id="closePilotHolding">
-        UPDATE pilot_positions
-        SET status = 'CLOSED',
-            closed_at = #{closedAt},
-            updated_at = #{closedAt}
+    <select id="domesticSelectDashboardRows" resultType="map">
+        SELECT
+            rank_no AS rankNo,
+            symbol,
+            stock_name AS stockName,
+            market_code AS marketCode,
+            candidate_score AS candidateScore,
+            purchase_zone AS purchaseZone,
+            dashboard_status AS dashboardStatus,
+            last_price AS lastPrice,
+            completed_buy_count AS completedBuyCount,
+            pending_buy_count AS pendingBuyCount,
+            reserved_buy_count AS reservedBuyCount,
+            current_duplicate_count AS currentDuplicateCount,
+            maximum_duplicate_count AS maximumDuplicateCount,
+            remaining_duplicate_count AS remainingDuplicateCount,
+            total_invested_amount AS totalInvestedAmount,
+            pending_investment_amount AS pendingInvestmentAmount,
+            CASE WHEN purchasable = 'Y' THEN 1 ELSE 0 END AS purchasable,
+            exclusion_reason AS exclusionReason,
+            last_selected_at AS lastSelectedAt,
+            last_buy_success_at AS lastBuySuccessAt,
+            retry_after AS retryAfter,
+            evaluated_at AS evaluatedAt,
+            updated_at AS updatedAt
+        FROM domestic_stock_dashboard
+        WHERE (#{marketCode} = 'ALL' OR market_code = #{marketCode})
+        ORDER BY rank_no ASC, symbol ASC
+    </select>
+
+    <update id="domesticTouchCandidateSelected">
+        UPDATE domestic_stock_master
+        SET last_selected_at = #{selectedAt},
+            updated_at = #{selectedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="domesticUpdateCandidateBuyAttempt">
+        UPDATE domestic_stock_master
+        SET last_buy_attempt_at = #{attemptedAt},
+            updated_at = #{attemptedAt}
         WHERE symbol = #{symbol}
-          AND status = 'OPEN'
+          AND market_code = #{marketCode}
     </update>
 
-    <update id="closePilotBalance">
-        UPDATE "파일럿_잔고"
-        SET "상태" = '청산',
-            "청산시각" = #{closedAt},
-            "갱신시각" = #{closedAt}
-        WHERE "종목" = #{symbol}
-          AND "상태" = '보유'
+    <update id="domesticMarkCandidateFailure">
+        UPDATE domestic_stock_master
+        SET consecutive_failures = consecutive_failures + 1,
+            retry_after = #{retryAfter},
+            excluded_reason = #{reason},
+            updated_at = #{updatedAt}
+        WHERE symbol = #{symbol}
+          AND market_code = #{marketCode}
     </update>
 
-    <update id="closeAutobotHolding">
-        UPDATE "오토봇_잔고"
-        SET "상태" = '청산',
-            "청산시각" = #{closedAt},
-            "갱신시각" = #{closedAt}
-        WHERE "종목" = #{symbol}
-          AND "상태" = '보유'
+    <update id="domesticMarkCandidateSuccess">
+        UPDATE domestic_stock_master
+        SET last_buy_success_at = #{successAt},
+            consecutive_failures = 0,
+            retry_after = NULL,
+            excluded_reason = NULL,
+            updated_at = #{successAt}
+        WHERE symbol = #{symbol}
+          AND market_code = #{marketCode}
     </update>
+
+    <select id="domesticCountActiveHeldAndOpenBuyQuantity" resultType="int">
+        SELECT
+            COALESCE((SELECT COUNT(*) FROM positions WHERE active = 'Y'), 0)
+            +
+            COALESCE((SELECT COUNT(*) FROM orders WHERE order_type = 'BUY' AND order_status IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')), 0)
+    </select>
+
+
+
+    <select id="overseasCountMasterRows" resultType="int">
+        SELECT COUNT(*)
+        FROM overseas_stock_master
+        WHERE exchange_code = #{exchangeCode}
+          AND currency_code = #{currencyCode}
+    </select>
+
+    <select id="overseasCountBuyableCandidates" resultType="int">
+        SELECT COUNT(*)
+        FROM overseas_stock_master
+        WHERE exchange_code = #{exchangeCode}
+          AND price_exchange_code = #{priceExchangeCode}
+          AND currency_code = #{currencyCode}
+          AND active = 'Y'
+          AND tradable = 'Y'
+          AND fractional_tradable = 'YES'
+    </select>
+
+    <insert id="overseasUpsertMaster" parameterType="map">
+        INSERT INTO overseas_stock_master (
+            symbol,
+            stock_name,
+            exchange_code,
+            price_exchange_code,
+            currency_code,
+            security_type,
+            tradable,
+            active,
+            fractional_tradable,
+            last_price,
+            market_cap,
+            trading_volume,
+            excluded_reason,
+            created_at,
+            updated_at,
+            last_synced_at
+        ) VALUES (
+            #{symbol},
+            #{stockName},
+            #{exchangeCode},
+            #{priceExchangeCode},
+            #{currencyCode},
+            #{securityType},
+            CASE WHEN #{tradable} THEN 'Y' ELSE 'N' END,
+            CASE WHEN #{active} THEN 'Y' ELSE 'N' END,
+            #{fractionalTradable},
+            #{lastPrice},
+            #{marketCap},
+            #{tradingVolume},
+            #{excludedReason},
+            #{createdAt},
+            #{updatedAt},
+            #{lastSyncedAt}
+        )
+        ON CONFLICT(symbol, exchange_code) DO UPDATE SET
+            stock_name = excluded.stock_name,
+            price_exchange_code = excluded.price_exchange_code,
+            currency_code = excluded.currency_code,
+            security_type = excluded.security_type,
+            tradable = excluded.tradable,
+            active = excluded.active,
+            last_price = excluded.last_price,
+            market_cap = excluded.market_cap,
+            trading_volume = excluded.trading_volume,
+            excluded_reason = excluded.excluded_reason,
+            updated_at = excluded.updated_at,
+            last_synced_at = excluded.last_synced_at
+    </insert>
+
+    <select id="overseasSelectCandidateEvaluations" resultType="map">
+        SELECT
+            m.id,
+            m.symbol,
+            m.stock_name AS stockName,
+            m.exchange_code AS exchangeCode,
+            m.price_exchange_code AS priceExchangeCode,
+            m.currency_code AS currencyCode,
+            m.security_type AS securityType,
+            m.fractional_tradable AS fractionalTradable,
+            CAST(COALESCE(m.last_price, '0') AS TEXT) AS lastPrice,
+            CAST(COALESCE(m.market_cap, '0') AS TEXT) AS marketCap,
+            CAST(COALESCE(m.trading_volume, '0') AS TEXT) AS tradingVolume,
+            m.last_selected_at AS lastSelectedAt,
+            m.last_buy_attempt_at AS lastBuyAttemptAt,
+            m.last_buy_success_at AS lastBuySuccessAt,
+            m.retry_after AS retryAfter,
+            m.fractional_verified_at AS fractionalVerifiedAt,
+            m.fractional_verification_source AS fractionalVerificationSource,
+            m.last_verification_attempt_at AS lastVerificationAttemptAt,
+            COALESCE(m.verification_attempt_count, 0) AS verificationAttemptCount,
+            m.last_kis_response_code AS lastKisResponseCode,
+            m.last_kis_response_message AS lastKisResponseMessage,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM positions p
+                WHERE p.stock_code = m.symbol
+                  AND p.active = 'Y'
+            ), 0) AS completedBuyCount,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM orders o
+                WHERE o.stock_code = m.symbol
+                  AND o.order_type = 'BUY'
+                  AND o.order_status IN ('REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+            ), 0) AS pendingBuyCount,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM orders r
+                WHERE r.stock_code = m.symbol
+                  AND r.order_type = 'BUY'
+                  AND r.order_status = 'ORDERING'
+            ), 0) AS reservedBuyCount,
+            CAST(COALESCE((
+                SELECT SUM(CAST(COALESCE(p.invested_amount, '0') AS REAL))
+                FROM positions p
+                WHERE p.stock_code = m.symbol
+                  AND p.active = 'Y'
+            ), 0) AS TEXT) AS totalInvestedAmount,
+            CAST(COALESCE((
+                SELECT SUM(CAST(COALESCE(o.order_amount, '0') AS REAL))
+                FROM orders o
+                WHERE o.stock_code = m.symbol
+                  AND o.order_type = 'BUY'
+                  AND o.order_status IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+            ), 0) AS TEXT) AS pendingInvestmentAmount
+        FROM overseas_stock_master m
+        WHERE m.exchange_code = #{exchangeCode}
+          AND m.price_exchange_code = #{priceExchangeCode}
+          AND m.currency_code = #{currencyCode}
+          AND m.active = 'Y'
+          AND m.tradable = 'Y'
+          AND m.symbol IS NOT NULL
+          AND TRIM(m.symbol) != ''
+    </select>
+
+    <insert id="overseasUpsertDashboardRow" parameterType="map">
+        INSERT INTO overseas_stock_dashboard (
+            symbol,
+            exchange_code,
+            rank_no,
+            stock_name,
+            candidate_score,
+            purchase_zone,
+            dashboard_status,
+            last_price,
+            completed_buy_count,
+            pending_buy_count,
+            reserved_buy_count,
+            current_duplicate_count,
+            maximum_duplicate_count,
+            remaining_duplicate_count,
+            total_invested_amount,
+            pending_investment_amount,
+            purchasable,
+            exclusion_reason,
+            last_selected_at,
+            last_buy_success_at,
+            retry_after,
+            evaluated_at,
+            updated_at
+        ) VALUES (
+            #{symbol},
+            #{exchangeCode},
+            #{rankNo},
+            #{stockName},
+            #{candidateScore},
+            #{purchaseZone},
+            #{dashboardStatus},
+            #{lastPrice},
+            #{completedBuyCount},
+            #{pendingBuyCount},
+            #{reservedBuyCount},
+            #{currentDuplicateCount},
+            #{maximumDuplicateCount},
+            #{remainingDuplicateCount},
+            #{totalInvestedAmount},
+            #{pendingInvestmentAmount},
+            CASE WHEN #{purchasable} THEN 'Y' ELSE 'N' END,
+            #{exclusionReason},
+            #{lastSelectedAt},
+            #{lastBuySuccessAt},
+            #{retryAfter},
+            #{evaluatedAt},
+            #{updatedAt}
+        )
+        ON CONFLICT(symbol, exchange_code) DO UPDATE SET
+            rank_no = excluded.rank_no,
+            stock_name = excluded.stock_name,
+            candidate_score = excluded.candidate_score,
+            purchase_zone = excluded.purchase_zone,
+            dashboard_status = excluded.dashboard_status,
+            last_price = excluded.last_price,
+            completed_buy_count = excluded.completed_buy_count,
+            pending_buy_count = excluded.pending_buy_count,
+            reserved_buy_count = excluded.reserved_buy_count,
+            current_duplicate_count = excluded.current_duplicate_count,
+            maximum_duplicate_count = excluded.maximum_duplicate_count,
+            remaining_duplicate_count = excluded.remaining_duplicate_count,
+            total_invested_amount = excluded.total_invested_amount,
+            pending_investment_amount = excluded.pending_investment_amount,
+            purchasable = excluded.purchasable,
+            exclusion_reason = excluded.exclusion_reason,
+            last_selected_at = excluded.last_selected_at,
+            last_buy_success_at = excluded.last_buy_success_at,
+            retry_after = excluded.retry_after,
+            evaluated_at = excluded.evaluated_at,
+            updated_at = excluded.updated_at
+    </insert>
+
+    <delete id="overseasDeleteStaleDashboardRows">
+        DELETE FROM overseas_stock_dashboard
+        WHERE exchange_code = #{exchangeCode}
+          AND evaluated_at != #{evaluatedAt}
+          AND NOT EXISTS (
+              SELECT 1
+              FROM positions p
+              WHERE p.stock_code = overseas_stock_dashboard.symbol
+                AND p.active = 'Y'
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.stock_code = overseas_stock_dashboard.symbol
+                AND o.order_status IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+          )
+    </delete>
+
+    <select id="overseasSelectDashboardRows" resultType="map">
+        SELECT
+            rank_no AS rankNo,
+            symbol,
+            stock_name AS stockName,
+            exchange_code AS exchangeCode,
+            candidate_score AS candidateScore,
+            purchase_zone AS purchaseZone,
+            dashboard_status AS dashboardStatus,
+            last_price AS lastPrice,
+            completed_buy_count AS completedBuyCount,
+            pending_buy_count AS pendingBuyCount,
+            reserved_buy_count AS reservedBuyCount,
+            current_duplicate_count AS currentDuplicateCount,
+            maximum_duplicate_count AS maximumDuplicateCount,
+            remaining_duplicate_count AS remainingDuplicateCount,
+            total_invested_amount AS totalInvestedAmount,
+            pending_investment_amount AS pendingInvestmentAmount,
+            CASE WHEN purchasable = 'Y' THEN 1 ELSE 0 END AS purchasable,
+            exclusion_reason AS exclusionReason,
+            last_selected_at AS lastSelectedAt,
+            last_buy_success_at AS lastBuySuccessAt,
+            retry_after AS retryAfter,
+            evaluated_at AS evaluatedAt,
+            updated_at AS updatedAt
+        FROM overseas_stock_dashboard
+        WHERE exchange_code = #{exchangeCode}
+        ORDER BY rank_no ASC, symbol ASC
+    </select>
+
+    <update id="overseasTouchCandidateSelected">
+        UPDATE overseas_stock_master
+        SET last_selected_at = #{selectedAt},
+            updated_at = #{selectedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="overseasUpdateCandidateBuyAttempt">
+        UPDATE overseas_stock_master
+        SET last_buy_attempt_at = #{attemptedAt},
+            updated_at = #{attemptedAt}
+        WHERE symbol = #{symbol}
+          AND exchange_code = #{exchangeCode}
+    </update>
+
+    <update id="overseasMarkCandidateFailure">
+        UPDATE overseas_stock_master
+        SET consecutive_failures = consecutive_failures + 1,
+            retry_after = #{retryAfter},
+            excluded_reason = #{reason},
+            updated_at = #{updatedAt}
+        WHERE symbol = #{symbol}
+          AND exchange_code = #{exchangeCode}
+    </update>
+
+    <update id="overseasMarkCandidateSuccess">
+        UPDATE overseas_stock_master
+        SET last_buy_success_at = #{successAt},
+            consecutive_failures = 0,
+            retry_after = NULL,
+            excluded_reason = NULL,
+            updated_at = #{successAt}
+        WHERE symbol = #{symbol}
+          AND exchange_code = #{exchangeCode}
+    </update>
+
+    <update id="overseasMarkFractionalVerificationAttempt">
+        UPDATE overseas_stock_master
+        SET last_verification_attempt_at = #{attemptedAt},
+            verification_attempt_count = COALESCE(verification_attempt_count, 0) + 1,
+            updated_at = #{attemptedAt}
+        WHERE symbol = #{symbol}
+          AND exchange_code = #{exchangeCode}
+    </update>
+
+    <update id="overseasMarkFractionalVerificationYes">
+        UPDATE overseas_stock_master
+        SET fractional_tradable = 'YES',
+            fractional_verified_at = #{verifiedAt},
+            fractional_verification_source = #{source},
+            last_kis_response_code = #{responseCode},
+            last_kis_response_message = #{responseMessage},
+            retry_after = NULL,
+            excluded_reason = NULL,
+            updated_at = #{verifiedAt}
+        WHERE symbol = #{symbol}
+          AND exchange_code = #{exchangeCode}
+    </update>
+
+    <update id="overseasKeepFractionalVerificationUnknown">
+        UPDATE overseas_stock_master
+        SET fractional_tradable = 'UNKNOWN',
+            last_kis_response_code = #{responseCode},
+            last_kis_response_message = #{responseMessage},
+            retry_after = #{retryAfter},
+            excluded_reason = #{responseMessage},
+            updated_at = #{updatedAt}
+        WHERE symbol = #{symbol}
+          AND exchange_code = #{exchangeCode}
+          AND fractional_tradable = 'UNKNOWN'
+    </update>
+
+    <select id="overseasCountActiveHeldAndOpenBuyQuantity" resultType="int">
+        SELECT
+            COALESCE((SELECT COUNT(*) FROM positions WHERE active = 'Y'), 0)
+            +
+            COALESCE((SELECT COUNT(*) FROM orders WHERE order_type = 'BUY' AND order_status IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')), 0)
+    </select>
 
 </mapper>
