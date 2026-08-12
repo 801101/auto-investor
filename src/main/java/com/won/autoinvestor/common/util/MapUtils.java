@@ -79,6 +79,32 @@ public final class MapUtils {
     }
 
     public static Object value(Map<String, Object> map, String key) {
-        return map == null ? null : map.get(key);
+        if (map == null || key == null) {
+            return null;
+        }
+        if (map.containsKey(key)) {
+            return map.get(key);
+        }
+        String upperSnakeKey = upperSnake(key);
+        if (map.containsKey(upperSnakeKey)) {
+            return map.get(upperSnakeKey);
+        }
+        String upperKey = key.toUpperCase();
+        if (map.containsKey(upperKey)) {
+            return map.get(upperKey);
+        }
+        return null;
+    }
+
+    private static String upperSnake(String value) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            char current = value.charAt(i);
+            if (Character.isUpperCase(current) && i > 0) {
+                builder.append('_');
+            }
+            builder.append(Character.toUpperCase(current));
+        }
+        return builder.toString();
     }
 }

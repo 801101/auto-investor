@@ -27,7 +27,7 @@ public class DryRunOrderExecutor implements OrderExecutor {
             String status = tradingMapper.selectOrderStatusByIdempotencyKey(MapUtils.map("idempotencyKey", MapUtils.string(request, "idempotencyKey")));
             logger.info("[DRY_RUN_BUY_REUSED] stockCode={}, idempotencyKey={}, status={}",
                     MapUtils.string(request, "stockCode"), MapUtils.string(request, "idempotencyKey"), status);
-            return accepted(null, status == null ? "REUSED" : status, "dry-run buy reused by idempotency key");
+            return reused(status, "dry-run buy reused by idempotency key");
         }
         logger.info("[DRY_RUN_BUY] stockCode={}, quantity={}, amount={}, price={}, reason={}",
                 MapUtils.string(request, "stockCode"), MapUtils.decimal(request, "orderQuantity"),
@@ -44,7 +44,7 @@ public class DryRunOrderExecutor implements OrderExecutor {
             String status = tradingMapper.selectOrderStatusByIdempotencyKey(MapUtils.map("idempotencyKey", MapUtils.string(request, "idempotencyKey")));
             logger.info("[DRY_RUN_SELL_REUSED] stockCode={}, idempotencyKey={}, status={}",
                     MapUtils.string(request, "stockCode"), MapUtils.string(request, "idempotencyKey"), status);
-            return accepted(null, status == null ? "REUSED" : status, "dry-run sell reused by idempotency key");
+            return reused(status, "dry-run sell reused by idempotency key");
         }
         logger.info("[DRY_RUN_SELL] stockCode={}, quantity={}, amount={}, price={}, reason={}",
                 MapUtils.string(request, "stockCode"), MapUtils.decimal(request, "orderQuantity"),
@@ -65,6 +65,16 @@ public class DryRunOrderExecutor implements OrderExecutor {
 
     private Map<String, Object> accepted(String brokerOrderId, String status, String message) {
         return MapUtils.map("accepted", true, "brokerOrderId", brokerOrderId, "status", status, "message", message);
+    }
+
+    private Map<String, Object> reused(String status, String message) {
+        String reusedStatus = status == null ? "REUSED" : status;
+        boolean orderAccepted = !"REJECTED".equalsIgnoreCase(reusedStatus)
+                && !"FAILED".equalsIgnoreCase(reusedStatus)
+                && !"CANCELLED".equalsIgnoreCase(reusedStatus)
+                && !"BLOCKED".equalsIgnoreCase(reusedStatus)
+                && !"SKIPPED".equalsIgnoreCase(reusedStatus);
+        return MapUtils.map("accepted", orderAccepted, "brokerOrderId", null, "status", reusedStatus, "message", message);
     }
 
     private Map<String, Object> orderRecord(Map<String, Object> request,

@@ -32,6 +32,11 @@ public class PilotController {
         return pilotService.getPositions();
     }
 
+    @GetMapping("/account")
+    public Map<String, Object> account() {
+        return pilotService.getAccount();
+    }
+
     @GetMapping("/overseas/dashboard")
     public Map<String, Object> overseasDashboard() {
         return pilotService.getOverseasDashboard();

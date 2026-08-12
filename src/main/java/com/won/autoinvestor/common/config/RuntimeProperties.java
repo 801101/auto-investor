@@ -7,6 +7,8 @@ public class RuntimeProperties {
 
     private String instanceId = "local-01";
     private boolean tradingEnabled = false;
+    private long kisBatchIntervalMinutes = 20L;
+    private long internalBatchIntervalMinutes = 5L;
 
     public String getInstanceId() {
         return instanceId;
@@ -22,5 +24,21 @@ public class RuntimeProperties {
 
     public void setTradingEnabled(boolean tradingEnabled) {
         this.tradingEnabled = tradingEnabled;
+    }
+
+    public long getKisBatchIntervalMinutes() {
+        return kisBatchIntervalMinutes;
+    }
+
+    public void setKisBatchIntervalMinutes(long kisBatchIntervalMinutes) {
+        this.kisBatchIntervalMinutes = kisBatchIntervalMinutes;
+    }
+
+    public long getInternalBatchIntervalMinutes() {
+        return internalBatchIntervalMinutes;
+    }
+
+    public void setInternalBatchIntervalMinutes(long internalBatchIntervalMinutes) {
+        this.internalBatchIntervalMinutes = internalBatchIntervalMinutes;
     }
 }

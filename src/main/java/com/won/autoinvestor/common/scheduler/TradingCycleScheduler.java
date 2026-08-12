@@ -18,8 +18,12 @@ public class TradingCycleScheduler {
         this.pilotService = pilotService;
     }
 
-    @Scheduled(fixedDelay = 1_200_000L)
+    @Scheduled(cron = "0 */${runtime.kis-batch-interval-minutes:20} * * * *")
     public synchronized void runTradingCycle() {
+        if (!pilotService.isStartupAccountSyncCompleted()) {
+            logger.debug("trading schedule skipped until startup account synchronization completes");
+            return;
+        }
         if (!firstTradingScheduleSkipped) {
             firstTradingScheduleSkipped = true;
             logger.info("first trading schedule skipped after application startup");
@@ -28,7 +32,7 @@ public class TradingCycleScheduler {
         pilotService.runTradingCycle();
     }
 
-    @Scheduled(fixedDelay = 300_000L)
+    @Scheduled(cron = "0 */${runtime.internal-batch-interval-minutes:5} * * * *")
     public void runMaintenanceCycle() {
         pilotService.runMaintenanceCycle();
     }

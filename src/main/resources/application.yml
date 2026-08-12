@@ -21,6 +21,10 @@ mybatis:
 runtime:
     # true면 스케줄러가 주문 판단을 실행합니다.
     trading-enabled: ${TRADING_ENABLED:false}
+    # 내부 유지보수 배치 주기입니다. 분 단위입니다.
+    internal-batch-interval-minutes: ${INTERNAL_BATCH_INTERVAL_MINUTES:5}
+    # KIS 매매 배치 주기입니다. 분 단위입니다.
+    kis-batch-interval-minutes: ${KIS_BATCH_INTERVAL_MINUTES:20}
 
 investment:
     market:
@@ -44,8 +48,8 @@ investment:
         unit-shares: ${INVESTMENT_UNIT_SHARES:1}
 
     holding:
-        # 같은 종목 총 구매 허용 횟수입니다. 0은 무제한입니다.
-        allow-duplicate-stock: ${INVESTMENT_ALLOW_DUPLICATE_STOCK:1}
+        # 같은 종목 최대 보유량입니다. 0은 무제한입니다.
+        max-holdings-per-stock: ${INVESTMENT_MAX_HOLDINGS_PER_STOCK:1}
         # 중복 포함 전체 보유 슬롯입니다. 0은 무제한입니다.
         max-holdings: ${INVESTMENT_MAX_HOLDINGS:50}
 
@@ -55,17 +59,17 @@ investment:
 
     strategy:
         take-profit:
-            # true면 익절 조건을 사용합니다.
-            enabled: ${INVESTMENT_TAKE_PROFIT_ENABLED:true}
             # BLACK 전환 익절률입니다.
             rate: ${INVESTMENT_TAKE_PROFIT_RATE:0.10}
         stop-loss:
-            # true면 손절 조건을 사용합니다.
-            enabled: ${INVESTMENT_STOP_LOSS_ENABLED:true}
             # BLACK 전환 손절률입니다.
             rate: ${INVESTMENT_STOP_LOSS_RATE:-0.10}
-        # GRAY 유지 최대 거래일입니다.
-        gray-max-trading-days: ${INVESTMENT_GRAY_MAX_TRADING_DAYS:3}
+        white:
+            # 보합이 이 영업일 이상 유지되면 GRAY로 전환합니다. 0이면 즉시입니다.
+            flat-grace-trading-days: ${INVESTMENT_WHITE_FLAT_GRACE_TRADING_DAYS:3}
+        gray:
+            # GRAY가 이 영업일 이상 유지되면 BLACK으로 전환합니다. 0이면 즉시입니다.
+            grace-trading-days: ${INVESTMENT_GRAY_GRACE_TRADING_DAYS:3}
 
 kis:
     # PAPER=모의투자, REAL=실전투자

@@ -17,6 +17,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.OffsetDateTime;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
@@ -64,7 +66,7 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
         BigDecimal totalValuationAmount = isOverseasMarket()
                 ? decimalFirst(summary, "tot_evlu_pfls_amt", "ovrs_tot_pfls", "frcr_evlu_tota", "totalValuationAmount")
                 : decimal(summary, "tot_evlu_amt");
-        logger.info("KIS account balance synchronized. account={}, cashBalance={}, totalValuationAmount={}",
+        logger.debug("KIS account balance synchronized. account={}, cashBalance={}, totalValuationAmount={}",
                 maskedAccountNumber(), cashBalance, totalValuationAmount);
         return MapUtils.map("cashBalance", cashBalance, "totalValuationAmount", totalValuationAmount);
     }
@@ -87,34 +89,72 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
                 "ovrs_ord_psbl_amt",
                 "frcr_ord_psbl_amt1",
                 "echm_af_ord_psbl_amt");
-        logger.info("KIS overseas buyable amount synchronized. account={}, stockCode={}, buyableAmount={}",
+        logger.debug("KIS overseas buyable amount synchronized. account={}, stockCode={}, buyableAmount={}",
                 maskedAccountNumber(), stockCode, buyableAmount);
         return MapUtils.map("cashBalance", buyableAmount, "totalValuationAmount", buyableAmount);
     }
 
     @Override
     public List<Map<String, Object>> getHoldings() {
-        JsonNode response = balanceResponse();
         List<Map<String, Object>> holdings = new ArrayList<>();
-        JsonNode rows = response.path("output1");
-        if (rows.isArray()) {
-            for (JsonNode row : rows) {
-                BigDecimal quantity = isOverseasMarket()
-                        ? decimalFirst(row, "ovrs_cblc_qty", "hldg_qty", "ord_psbl_qty")
-                        : decimal(row, "hldg_qty");
-                if (quantity.signum() <= 0) {
-                    continue;
-                }
-                holdings.add(MapUtils.map(
-                        "stockCode", textFirst(row, "ovrs_pdno", "pdno"),
-                        "stockName", textFirst(row, "ovrs_item_name", "prdt_name"),
-                        "quantity", quantity,
-                        "averagePrice", decimalFirst(row, "pchs_avg_pric", "avg_unpr3")
-                ));
+        if (isOverseasMarket()) {
+            for (JsonNode response : allOverseasBalanceResponses()) {
+                appendHoldings(response.path("output1"), holdings);
             }
+        } else {
+            appendHoldings(balanceResponse().path("output1"), holdings);
         }
-        logger.info("KIS holdings synchronized. account={}, holdingCount={}", maskedAccountNumber(), holdings.size());
+        logger.debug("KIS holdings synchronized. account={}, holdingCount={}", maskedAccountNumber(), holdings.size());
         return holdings;
+    }
+
+    private void appendHoldings(JsonNode rows, List<Map<String, Object>> holdings) {
+        if (rows == null || !rows.isArray()) {
+            return;
+        }
+        for (JsonNode row : rows) {
+            BigDecimal quantity = isOverseasMarket()
+                    ? decimalFirst(row, "ovrs_cblc_qty", "hldg_qty", "ord_psbl_qty")
+                    : decimal(row, "hldg_qty");
+            if (quantity.signum() <= 0) {
+                continue;
+            }
+            holdings.add(MapUtils.map(
+                    "stockCode", textFirst(row, "ovrs_pdno", "pdno"),
+                    "stockName", textFirst(row, "ovrs_item_name", "prdt_name"),
+                    "quantity", quantity,
+                    "averagePrice", decimalFirst(row, "pchs_avg_pric", "avg_unpr3")
+            ));
+        }
+    }
+
+    private List<JsonNode> allOverseasBalanceResponses() {
+        List<JsonNode> responses = new ArrayList<>();
+        JsonNode response = balanceResponse();
+        responses.add(response);
+
+        String foreignKey = textFirst(response, "ctx_area_fk200");
+        String nextKey = textFirst(response, "ctx_area_nk200");
+        for (int page = 1; page <= 100 && (!foreignKey.isBlank() || !nextKey.isBlank()); page++) {
+            Map<String, String> query = balanceQueryParams();
+            query.put("CTX_AREA_FK200", foreignKey);
+            query.put("CTX_AREA_NK200", nextKey);
+            JsonNode nextResponse = authenticatedGet(
+                    kisProperties.getOverseasBalancePath(),
+                    kisProperties.getOverseasBalanceTrId(),
+                    query
+            );
+            responses.add(nextResponse);
+
+            String nextForeignKey = textFirst(nextResponse, "ctx_area_fk200");
+            String nextNextKey = textFirst(nextResponse, "ctx_area_nk200");
+            if (foreignKey.equals(nextForeignKey) && nextKey.equals(nextNextKey)) {
+                break;
+            }
+            foreignKey = nextForeignKey;
+            nextKey = nextNextKey;
+        }
+        return responses;
     }
 
     @Override
@@ -135,7 +175,7 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
             ));
             price = decimal(response.path("output"), "stck_prpr");
         }
-        logger.info("KIS current price synchronized. stockCode={}, price={}", stockCode, price);
+        logger.debug("KIS current price synchronized. stockCode={}, price={}", stockCode, price);
         return MapUtils.map("stockCode", stockCode, "price", price, "receivedAt", OffsetDateTime.now());
     }
 
@@ -159,6 +199,215 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
                 MapUtils.decimal(request, "orderQuantity"), MapUtils.decimal(request, "orderPrice"), MapUtils.decimal(request, "orderAmount"));
     }
 
+    @Override
+    public Map<String, Object> cancel(Map<String, Object> request) {
+        String stockCode = MapUtils.string(request, "stockCode");
+        String brokerOrderId = MapUtils.string(request, "brokerOrderId");
+        String quantity = plain(MapUtils.decimal(request, "orderQuantity"));
+        try {
+            if (isOverseasMarket()) {
+                Map<String, String> body = new LinkedHashMap<>();
+                body.put("CANO", kisProperties.getAccountNumber());
+                body.put("ACNT_PRDT_CD", kisProperties.getAccountProductCode());
+                body.put("OVRS_EXCG_CD", investmentProperties.getOverseasExchangeCode());
+                body.put("PDNO", stockCode);
+                body.put("ORGN_ODNO", brokerOrderId);
+                body.put("RVSE_CNCL_DVSN_CD", "02");
+                body.put("ORD_QTY", quantity);
+                body.put("OVRS_ORD_UNPR", "0");
+                body.put("MGCO_APTM_ODNO", "");
+                body.put("ORD_SVR_DVSN_CD", "0");
+                JsonNode response = authenticatedPostJsonString(kisProperties.getOverseasCancelPath(), kisProperties.getOverseasCancelTrId(), body);
+                return cancelResponse(response);
+            }
+
+            Map<String, String> body = new LinkedHashMap<>();
+            body.put("CANO", kisProperties.getAccountNumber());
+            body.put("ACNT_PRDT_CD", kisProperties.getAccountProductCode());
+            body.put("KRX_FWDG_ORD_ORGNO", MapUtils.string(request, "brokerOrderOrgNo"));
+            body.put("ORGN_ODNO", brokerOrderId);
+            body.put("ORD_DVSN", kisProperties.getOrderDivision());
+            body.put("RVSE_CNCL_DVSN_CD", "02");
+            body.put("ORD_QTY", quantity);
+            body.put("ORD_UNPR", MapUtils.value(request, "orderPrice") == null
+                    ? "0" : plain(MapUtils.decimal(request, "orderPrice")));
+            body.put("QTY_ALL_ORD_YN", "Y");
+            body.put("EXCG_ID_DVSN_CD", "KRX");
+            JsonNode response = authenticatedPost(kisProperties.getDomesticCancelPath(), kisProperties.getDomesticCancelTrId(), body);
+            return cancelResponse(response);
+        } catch (RestClientResponseException e) {
+            return rejected(rejectedMessage(e));
+        } catch (RuntimeException e) {
+            return rejected(e.getMessage());
+        }
+    }
+
+    @Override
+    public List<Map<String, Object>> getOrderStatuses(Map<String, Object> request) {
+        if (isOverseasMarket()) {
+            return overseasOrderStatuses();
+        }
+        return domesticOrderStatuses();
+    }
+
+    private List<Map<String, Object>> overseasOrderStatuses() {
+        List<Map<String, Object>> statuses = new ArrayList<>();
+        LocalDate today = LocalDate.now();
+        String startDate = today.minusDays(90).format(DateTimeFormatter.BASIC_ISO_DATE);
+        String endDate = today.format(DateTimeFormatter.BASIC_ISO_DATE);
+        String foreignKey = "";
+        String nextKey = "";
+        String continuation = "";
+
+        for (int page = 0; page < 20; page++) {
+            Map<String, String> query = new LinkedHashMap<>();
+            query.put("CANO", kisProperties.getAccountNumber());
+            query.put("ACNT_PRDT_CD", kisProperties.getAccountProductCode());
+            query.put("PDNO", "");
+            query.put("ORD_STRT_DT", startDate);
+            query.put("ORD_END_DT", endDate);
+            query.put("SLL_BUY_DVSN", "00");
+            query.put("CCLD_NCCS_DVSN", "00");
+            query.put("OVRS_EXCG_CD", kisProperties.isPaperMode() ? "" : "%");
+            query.put("SORT_SQN", kisProperties.isPaperMode() ? "" : "DS");
+            query.put("ORD_DT", "");
+            query.put("ORD_GNO_BRNO", "");
+            query.put("ODNO", "");
+            query.put("CTX_AREA_NK200", nextKey);
+            query.put("CTX_AREA_FK200", foreignKey);
+
+            JsonNode response = authenticatedGet(
+                    kisProperties.getOverseasOrderStatusPath(),
+                    kisProperties.getOverseasOrderStatusTrId(),
+                    query,
+                    continuation
+            );
+            requireSuccessfulResponse(response, "overseas order status inquiry");
+            appendOrderStatuses(response.path("output"), statuses, true);
+
+            String nextForeignKey = textFirst(response, "ctx_area_fk200");
+            String nextNextKey = textFirst(response, "ctx_area_nk200");
+            if (foreignKey.equals(nextForeignKey) && nextKey.equals(nextNextKey)) {
+                break;
+            }
+            if (nextForeignKey.isBlank() && nextNextKey.isBlank()) {
+                break;
+            }
+            foreignKey = nextForeignKey;
+            nextKey = nextNextKey;
+            continuation = "N";
+        }
+        return statuses;
+    }
+
+    private List<Map<String, Object>> domesticOrderStatuses() {
+        List<Map<String, Object>> statuses = new ArrayList<>();
+        LocalDate today = LocalDate.now();
+        String foreignKey = "";
+        String nextKey = "";
+        String continuation = "";
+
+        for (int page = 0; page < 20; page++) {
+            Map<String, String> query = new LinkedHashMap<>();
+            query.put("CANO", kisProperties.getAccountNumber());
+            query.put("ACNT_PRDT_CD", kisProperties.getAccountProductCode());
+            query.put("INQR_STRT_DT", today.minusDays(90).format(DateTimeFormatter.BASIC_ISO_DATE));
+            query.put("INQR_END_DT", today.format(DateTimeFormatter.BASIC_ISO_DATE));
+            query.put("SLL_BUY_DVSN_CD", "00");
+            query.put("PDNO", "");
+            query.put("CCLD_DVSN", "00");
+            query.put("INQR_DVSN", "00");
+            query.put("INQR_DVSN_3", "00");
+            query.put("ORD_GNO_BRNO", "");
+            query.put("ODNO", "");
+            query.put("INQR_DVSN_1", "");
+            query.put("INQR_DVSN_2", "");
+            query.put("EXCG_ID_DVSN_CD", "KRX");
+            query.put("CTX_AREA_FK100", foreignKey);
+            query.put("CTX_AREA_NK100", nextKey);
+
+            JsonNode response = authenticatedGet(
+                    kisProperties.getDomesticOrderStatusPath(),
+                    kisProperties.getDomesticOrderStatusTrId(),
+                    query,
+                    continuation
+            );
+            requireSuccessfulResponse(response, "domestic order status inquiry");
+            appendOrderStatuses(response.path("output1"), statuses, false);
+
+            String nextForeignKey = textFirst(response, "ctx_area_fk100");
+            String nextNextKey = textFirst(response, "ctx_area_nk100");
+            if (foreignKey.equals(nextForeignKey) && nextKey.equals(nextNextKey)) {
+                break;
+            }
+            if (nextForeignKey.isBlank() && nextNextKey.isBlank()) {
+                break;
+            }
+            foreignKey = nextForeignKey;
+            nextKey = nextNextKey;
+            continuation = "N";
+        }
+        return statuses;
+    }
+
+    private void appendOrderStatuses(JsonNode rows, List<Map<String, Object>> statuses, boolean overseas) {
+        if (rows == null || rows.isMissingNode() || rows.isNull()) {
+            return;
+        }
+        if (!rows.isArray()) {
+            statuses.add(normalizeOrderStatus(rows, overseas));
+            return;
+        }
+        for (JsonNode row : rows) {
+            statuses.add(normalizeOrderStatus(row, overseas));
+        }
+    }
+
+    private Map<String, Object> normalizeOrderStatus(JsonNode row, boolean overseas) {
+        BigDecimal requestedQuantity = decimalFirst(row, overseas ? "ft_ord_qty" : "ord_qty", "FT_ORD_QTY", "ORD_QTY");
+        BigDecimal filledQuantity = decimalFirst(row, overseas ? "ft_ccld_qty" : "tot_ccld_qty", "FT_CCLD_QTY", "TOT_CCLD_QTY");
+        BigDecimal remainingQuantity = decimalFirst(row, overseas ? "nccs_qty" : "rmn_qty", "NCCS_QTY", "RMN_QTY");
+        String brokerStatus = resolveBrokerStatus(row, requestedQuantity, filledQuantity, remainingQuantity);
+        return MapUtils.map(
+                "brokerOrderId", textFirst(row, "odno", "ODNO"),
+                "brokerOrderOrgNo", textFirst(row, "krx_fwdg_ord_orgno", "KRX_FWDG_ORD_ORGNO", "ord_gno_brno"),
+                "stockCode", textFirst(row, overseas ? "pdno" : "pdno", "PDNO"),
+                "orderType", "02".equals(textFirst(row, "sll_buy_dvsn_cd", "SLL_BUY_DVSN_CD")) ? "BUY" : "SELL",
+                "requestedQuantity", requestedQuantity,
+                "filledQuantity", filledQuantity,
+                "remainingQuantity", remainingQuantity,
+                "brokerStatus", brokerStatus,
+                "brokerCancellationYn", textFirst(row, "cncl_yn", "CNCL_YN"),
+                "brokerMessage", textFirst(row, "prcs_stat_name", "PRCS_STAT_NAME", "msg1")
+        );
+    }
+
+    private String resolveBrokerStatus(JsonNode row,
+                                       BigDecimal requestedQuantity,
+                                       BigDecimal filledQuantity,
+                                       BigDecimal remainingQuantity) {
+        String cancelled = textFirst(row, "cncl_yn", "CNCL_YN");
+        if ("Y".equalsIgnoreCase(cancelled)) {
+            return "CANCELLED";
+        }
+        if (remainingQuantity.signum() > 0) {
+            return filledQuantity.signum() > 0 ? "PARTIALLY_FILLED" : "OPEN";
+        }
+        if (requestedQuantity.signum() > 0 && filledQuantity.compareTo(requestedQuantity) >= 0) {
+            return "FILLED";
+        }
+        if (filledQuantity.signum() > 0) {
+            return "PARTIALLY_FILLED";
+        }
+        return "UNKNOWN";
+    }
+
+    private void requireSuccessfulResponse(JsonNode response, String operation) {
+        if (response == null || !"0".equals(response.path("rt_cd").asText())) {
+            throw new IllegalStateException(operation + " failed: " + orderResponseSummary(response));
+        }
+    }
+
     private Map<String, Object> order(String orderType,
                                       String transactionId,
                                       String stockCode,
@@ -180,6 +429,7 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
         }
         JsonNode output = response.path("output");
         String brokerOrderId = output.path("ODNO").asText(null);
+        String brokerOrderOrgNo = textFirst(output, "KRX_FWDG_ORD_ORGNO", "krx_fwdg_ord_orgno");
         String message = response.path("msg1").asText(orderType + " order requested");
         String status = response.path("rt_cd").asText("UNKNOWN");
         logger.info("KIS {} order response. stockCode={}, brokerOrderId={}, status={}, message={}",
@@ -187,7 +437,7 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
         if (!"0".equals(status)) {
             return rejected(orderResponseSummary(response));
         }
-        return accepted(brokerOrderId, status, message);
+        return accepted(brokerOrderId, brokerOrderOrgNo, status, message);
     }
 
     private Map<String, Object> overseasOrder(String orderType,
@@ -225,11 +475,25 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
         if (!"0".equals(status)) {
             return rejected(orderResponseSummary(response));
         }
-        return accepted(brokerOrderId, status, message);
+        return accepted(brokerOrderId, null, status, message);
+    }
+
+    private Map<String, Object> cancelResponse(JsonNode response) {
+        String status = response.path("rt_cd").asText("UNKNOWN");
+        String message = response.path("msg1").asText("order cancellation requested");
+        if (!"0".equals(status)) {
+            return rejected(orderResponseSummary(response));
+        }
+        return accepted(null, null, status, message);
     }
 
     private Map<String, Object> accepted(String brokerOrderId, String status, String message) {
-        return MapUtils.map("accepted", true, "brokerOrderId", brokerOrderId, "status", status, "message", message);
+        return accepted(brokerOrderId, null, status, message);
+    }
+
+    private Map<String, Object> accepted(String brokerOrderId, String brokerOrderOrgNo, String status, String message) {
+        return MapUtils.map("accepted", true, "brokerOrderId", brokerOrderId,
+                "brokerOrderOrgNo", brokerOrderOrgNo, "status", status, "message", message);
     }
 
     private Map<String, Object> rejected(String message) {
@@ -289,11 +553,19 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
         cachedBalanceResponse = isOverseasMarket()
                 ? authenticatedGet(kisProperties.getOverseasBalancePath(), kisProperties.getOverseasBalanceTrId(), balanceQueryParams())
                 : authenticatedGet(kisProperties.getBalancePath(), kisProperties.getBalanceTrId(), balanceQueryParams());
+        requireSuccessfulResponse(cachedBalanceResponse, "account balance inquiry");
         cachedBalanceResponseAt = now;
         return cachedBalanceResponse;
     }
 
     private JsonNode authenticatedGet(String path, String transactionId, Map<String, String> queryParams) {
+        return authenticatedGet(path, transactionId, queryParams, "");
+    }
+
+    private JsonNode authenticatedGet(String path,
+                                      String transactionId,
+                                      Map<String, String> queryParams,
+                                      String continuation) {
         Map<String, Object> accessToken = tokenManager.getValidToken();
         throttleApiRequest();
         return restClient.get()
@@ -302,7 +574,10 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
                     queryParams.forEach(uriBuilder::queryParam);
                     return uriBuilder.build();
                 })
-                .headers(headers -> applyCommonHeaders(headers, accessToken, transactionId))
+                .headers(headers -> {
+                    applyCommonHeaders(headers, accessToken, transactionId);
+                    headers.set("tr_cont", continuation == null ? "" : continuation);
+                })
                 .retrieve()
                 .body(JsonNode.class);
     }

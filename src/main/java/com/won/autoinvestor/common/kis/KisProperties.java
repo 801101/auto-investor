@@ -196,6 +196,38 @@ public class KisProperties {
         return activeValue(activeProfile().overseasSellTrId, overseas.sellTrId);
     }
 
+    public String getDomesticCancelPath() {
+        return domestic.cancelPath;
+    }
+
+    public String getDomesticCancelTrId() {
+        return activeValue(activeProfile().domesticCancelTrId, domestic.cancelTrId);
+    }
+
+    public String getOverseasCancelPath() {
+        return overseas.cancelPath;
+    }
+
+    public String getOverseasCancelTrId() {
+        return activeValue(activeProfile().overseasCancelTrId, overseas.cancelTrId);
+    }
+
+    public String getDomesticOrderStatusPath() {
+        return domestic.orderStatusPath;
+    }
+
+    public String getDomesticOrderStatusTrId() {
+        return activeValue(activeProfile().domesticOrderStatusTrId, domestic.orderStatusTrId);
+    }
+
+    public String getOverseasOrderStatusPath() {
+        return overseas.orderStatusPath;
+    }
+
+    public String getOverseasOrderStatusTrId() {
+        return activeValue(activeProfile().overseasOrderStatusTrId, overseas.orderStatusTrId);
+    }
+
     public boolean isPaperMode() {
         return "PAPER".equalsIgnoreCase(accountMode);
     }
@@ -221,10 +253,14 @@ public class KisProperties {
         private String currentPricePath = "/uapi/domestic-stock/v1/quotations/inquire-price";
         private String balancePath = "/uapi/domestic-stock/v1/trading/inquire-balance";
         private String orderCashPath = "/uapi/domestic-stock/v1/trading/order-cash";
+        private String cancelPath = "/uapi/domestic-stock/v1/trading/order-rvsecncl";
+        private String orderStatusPath = "/uapi/domestic-stock/v1/trading/inquire-daily-ccld";
         private String currentPriceTrId = "FHKST01010100";
         private String balanceTrId = "VTTC8434R";
         private String buyTrId = "VTTC0012U";
         private String sellTrId = "VTTC0011U";
+        private String cancelTrId = "VTTC0013U";
+        private String orderStatusTrId = "VTTC0081R";
         private String marketDivisionCode = "J";
 
         public String getCurrentPricePath() {
@@ -249,6 +285,14 @@ public class KisProperties {
 
         public void setOrderCashPath(String orderCashPath) {
             this.orderCashPath = orderCashPath;
+        }
+
+        public String getOrderStatusPath() {
+            return orderStatusPath;
+        }
+
+        public void setOrderStatusPath(String orderStatusPath) {
+            this.orderStatusPath = orderStatusPath;
         }
 
         public String getCurrentPriceTrId() {
@@ -290,6 +334,14 @@ public class KisProperties {
         public void setMarketDivisionCode(String marketDivisionCode) {
             this.marketDivisionCode = marketDivisionCode;
         }
+
+        public String getOrderStatusTrId() {
+            return orderStatusTrId;
+        }
+
+        public void setOrderStatusTrId(String orderStatusTrId) {
+            this.orderStatusTrId = orderStatusTrId;
+        }
     }
 
     public static class Overseas {
@@ -298,11 +350,15 @@ public class KisProperties {
         private String balancePath = "/uapi/overseas-stock/v1/trading/inquire-balance";
         private String buyableAmountPath = "/uapi/overseas-stock/v1/trading/inquire-psamount";
         private String orderPath = "/uapi/overseas-stock/v1/trading/order";
+        private String cancelPath = "/uapi/overseas-stock/v1/trading/order-rvsecncl";
+        private String orderStatusPath = "/uapi/overseas-stock/v1/trading/inquire-ccnl";
         private String priceTrId = "HHDFS00000300";
         private String balanceTrId = "VTTS3012R";
         private String buyableAmountTrId = "VTTS3007R";
         private String buyTrId = "VTTT1002U";
         private String sellTrId = "VTTT1001U";
+        private String cancelTrId = "VTTT1004U";
+        private String orderStatusTrId = "VTTS3035R";
 
         public String getPricePath() {
             return pricePath;
@@ -334,6 +390,14 @@ public class KisProperties {
 
         public void setOrderPath(String orderPath) {
             this.orderPath = orderPath;
+        }
+
+        public String getOrderStatusPath() {
+            return orderStatusPath;
+        }
+
+        public void setOrderStatusPath(String orderStatusPath) {
+            this.orderStatusPath = orderStatusPath;
         }
 
         public String getPriceTrId() {
@@ -375,6 +439,14 @@ public class KisProperties {
         public void setSellTrId(String sellTrId) {
             this.sellTrId = sellTrId;
         }
+
+        public String getOrderStatusTrId() {
+            return orderStatusTrId;
+        }
+
+        public void setOrderStatusTrId(String orderStatusTrId) {
+            this.orderStatusTrId = orderStatusTrId;
+        }
     }
 
     public static class AccountProfile {
@@ -384,11 +456,15 @@ public class KisProperties {
         private String domesticBalanceTrId;
         private String domesticBuyTrId;
         private String domesticSellTrId;
+        private String domesticCancelTrId;
+        private String domesticOrderStatusTrId;
         private String overseasPriceTrId;
         private String overseasBalanceTrId;
         private String overseasBuyableAmountTrId;
         private String overseasBuyTrId;
         private String overseasSellTrId;
+        private String overseasCancelTrId;
+        private String overseasOrderStatusTrId;
 
         static AccountProfile paper() {
             AccountProfile profile = new AccountProfile();
@@ -397,11 +473,15 @@ public class KisProperties {
             profile.domesticBalanceTrId = "VTTC8434R";
             profile.domesticBuyTrId = "VTTC0012U";
             profile.domesticSellTrId = "VTTC0011U";
+            profile.domesticCancelTrId = "VTTC0013U";
+            profile.domesticOrderStatusTrId = "VTTC0081R";
             profile.overseasPriceTrId = "HHDFS00000300";
             profile.overseasBalanceTrId = "VTTS3012R";
             profile.overseasBuyableAmountTrId = "VTTS3007R";
             profile.overseasBuyTrId = "VTTT1002U";
             profile.overseasSellTrId = "VTTT1001U";
+            profile.overseasCancelTrId = "VTTT1004U";
+            profile.overseasOrderStatusTrId = "VTTS3035R";
             return profile;
         }
 
@@ -412,11 +492,15 @@ public class KisProperties {
             profile.domesticBalanceTrId = "TTTC8434R";
             profile.domesticBuyTrId = "TTTC0012U";
             profile.domesticSellTrId = "TTTC0011U";
+            profile.domesticCancelTrId = "TTTC0013U";
+            profile.domesticOrderStatusTrId = "TTTC0081R";
             profile.overseasPriceTrId = "HHDFS00000300";
             profile.overseasBalanceTrId = "TTTS3012R";
             profile.overseasBuyableAmountTrId = "TTTS3007R";
             profile.overseasBuyTrId = "TTTT1002U";
             profile.overseasSellTrId = "TTTT1006U";
+            profile.overseasCancelTrId = "TTTT1004U";
+            profile.overseasOrderStatusTrId = "TTTS3035R";
             return profile;
         }
 
@@ -460,6 +544,14 @@ public class KisProperties {
             this.domesticSellTrId = domesticSellTrId;
         }
 
+        public String getDomesticOrderStatusTrId() {
+            return domesticOrderStatusTrId;
+        }
+
+        public void setDomesticOrderStatusTrId(String domesticOrderStatusTrId) {
+            this.domesticOrderStatusTrId = domesticOrderStatusTrId;
+        }
+
         public String getOverseasPriceTrId() {
             return overseasPriceTrId;
         }
@@ -498,6 +590,14 @@ public class KisProperties {
 
         public void setOverseasSellTrId(String overseasSellTrId) {
             this.overseasSellTrId = overseasSellTrId;
+        }
+
+        public String getOverseasOrderStatusTrId() {
+            return overseasOrderStatusTrId;
+        }
+
+        public void setOverseasOrderStatusTrId(String overseasOrderStatusTrId) {
+            this.overseasOrderStatusTrId = overseasOrderStatusTrId;
         }
     }
 }

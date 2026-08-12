@@ -8,8 +8,6 @@ import java.util.Map;
 @Mapper
 public interface PilotMapper {
 
-    int countActivePanicStop();
-
     String sumActiveHoldingQuantityByStockCode(Map<String, Object> parameter);
 
     String sumOpenBuyOrderQuantityByStockCode(Map<String, Object> parameter);
@@ -20,25 +18,43 @@ public interface PilotMapper {
 
     int countActivePositions();
 
+    int countActiveHeldAndOpenBuySlots();
+
     Long selectActivePositionIdByStockCode(Map<String, Object> parameter);
+
+    Map<String, Object> selectActivePositionByStockCode(Map<String, Object> parameter);
+
+    List<Map<String, Object>> selectActivePositions();
+
+    List<Map<String, Object>> selectActiveBlackPositions();
 
     void insertSyncedPosition(Map<String, Object> parameter);
 
     void updateSyncedPosition(Map<String, Object> parameter);
 
-    String sumActiveHoldingQuantity();
+    void updatePositionAfterEvaluation(Map<String, Object> parameter);
 
-    String sumOpenBuyOrderQuantity();
+    void closePosition(Map<String, Object> parameter);
 
     int countOrderByIdempotencyKey(Map<String, Object> parameter);
 
     String selectOrderStatusByIdempotencyKey(Map<String, Object> parameter);
 
+    List<Map<String, Object>> selectOpenBuyOrders();
+
+    List<Map<String, Object>> selectOpenSellOrders();
+
+    List<Map<String, Object>> selectOrdersForStatusSync();
+
+    void updateOrderStatusById(Map<String, Object> parameter);
+
     void updateOrderBrokerResultByIdempotencyKey(Map<String, Object> parameter);
 
-    void deleteOrderByIdempotencyKey(Map<String, Object> parameter);
+    void updateOrderStatusByBrokerOrderId(Map<String, Object> parameter);
 
-    void markAcceptedBuyOrdersFilledByStockCode(Map<String, Object> parameter);
+    void updateOrderBrokerStatusById(Map<String, Object> parameter);
+
+    int countOpenSellOrderByStockCode(Map<String, Object> parameter);
 
     void insertOrderRecordDetailed(Map<String, Object> parameter);
 
@@ -86,7 +102,7 @@ public interface PilotMapper {
 
     List<Map<String, Object>> overseasSelectDashboardRows(Map<String, Object> parameter);
 
-    int overseasTouchCandidateSelected(Map<String, Object> parameter);
+    void overseasTouchCandidateSelected(Map<String, Object> parameter);
 
     void overseasUpdateCandidateBuyAttempt(Map<String, Object> parameter);
 

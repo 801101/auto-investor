@@ -201,16 +201,20 @@ public class OverseasStockCandidateService {
     }
 
     private Map<String, Object> score(Map<String, Object> row, String now) {
-        int maxDuplicates = investmentProperties.getAllowDuplicateStock();
+        int maxHoldingsPerStock = investmentProperties.getMaxHoldingsPerStock();
         int currentDuplicates = MapUtils.integer(row, "completedBuyCount") + MapUtils.integer(row, "pendingBuyCount") + MapUtils.integer(row, "reservedBuyCount");
-        int remainingDuplicates = maxDuplicates == 0 ? Integer.MAX_VALUE : Math.max(maxDuplicates - currentDuplicates, 0);
-        String exclusion = exclusionReason(row, now, remainingDuplicates);
+        int remainingHoldingsPerStock = maxHoldingsPerStock == 0 ? Integer.MAX_VALUE : Math.max(maxHoldingsPerStock - currentDuplicates, 0);
+        String exclusion = exclusionReason(row, now, remainingHoldingsPerStock);
 
         BigDecimal rotationScore = rotationScore(row);
-        return MapUtils.map("row", row, "candidateScore", rotationScore, "currentDuplicateCount", currentDuplicates, "remainingDuplicateCount", remainingDuplicates, "exclusionReason", exclusion);
+        return MapUtils.map("row", row, "candidateScore", rotationScore, "currentDuplicateCount", currentDuplicates, "remainingDuplicateCount", remainingHoldingsPerStock, "exclusionReason", exclusion);
     }
 
-    private String exclusionReason(Map<String, Object> row, String now, int remainingDuplicates) {
+    private String exclusionReason(Map<String, Object> row, String now, int remainingHoldingsPerStock) {
+        String symbol = MapUtils.string(row, "symbol");
+        if (symbol == null || symbol.isBlank()) {
+            return "EMPTY_SYMBOL";
+        }
         if ("AMOUNT".equalsIgnoreCase(investmentProperties.getOrderUnitType())
                 && !isFractionalCandidateAllowed(row)) {
             return "FRACTIONAL_NOT_CONFIRMED";
@@ -221,8 +225,8 @@ public class OverseasStockCandidateService {
         if (MapUtils.integer(row, "pendingBuyCount") > 0 || MapUtils.integer(row, "reservedBuyCount") > 0) {
             return "OPEN_BUY_ORDER_EXISTS";
         }
-        if (remainingDuplicates <= 0) {
-            return "DUPLICATE_LIMIT_REACHED";
+        if (remainingHoldingsPerStock <= 0) {
+            return "MAX_HOLDINGS_PER_STOCK_REACHED";
         }
         String retryAfter = MapUtils.string(row, "retryAfter");
         if (retryAfter != null && retryAfter.compareTo(now) > 0) {
@@ -280,7 +284,11 @@ public class OverseasStockCandidateService {
                 .thenComparing(candidate -> MapUtils.integer(candidate, "remainingDuplicateCount"), Comparator.reverseOrder())
                 .thenComparing(candidate -> nullToOldest(MapUtils.string(row(candidate), "lastBuySuccessAt")))
                 .thenComparing(candidate -> nullToOldest(MapUtils.string(row(candidate), "lastSelectedAt")))
-                .thenComparing(candidate -> MapUtils.string(row(candidate), "symbol"));
+                .thenComparing(candidate -> nullToLast(MapUtils.string(row(candidate), "symbol")));
+    }
+
+    private String nullToLast(String value) {
+        return value == null || value.isBlank() ? "~~~~" : value;
     }
 
     private int securityTypePriority(String securityType) {

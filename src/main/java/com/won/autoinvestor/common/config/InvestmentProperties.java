@@ -97,12 +97,12 @@ public class InvestmentProperties {
         market.overseasCurrencyCode = overseasCurrencyCode;
     }
 
-    public int getAllowDuplicateStock() {
-        return holding.allowDuplicateStock;
+    public int getMaxHoldingsPerStock() {
+        return holding.maxHoldingsPerStock;
     }
 
-    public void setAllowDuplicateStock(int allowDuplicateStock) {
-        holding.allowDuplicateStock = allowDuplicateStock;
+    public void setMaxHoldingsPerStock(int maxHoldingsPerStock) {
+        holding.maxHoldingsPerStock = maxHoldingsPerStock;
     }
 
     public int getMaxHoldings() {
@@ -148,12 +148,12 @@ public class InvestmentProperties {
         strategy.stopLoss = stopLoss;
     }
 
-    public int getGrayMaxTradingDays() {
-        return strategy.grayMaxTradingDays;
+    public int getGrayGraceTradingDays() {
+        return strategy.gray.graceTradingDays;
     }
 
-    public void setGrayMaxTradingDays(int grayMaxTradingDays) {
-        strategy.grayMaxTradingDays = grayMaxTradingDays;
+    public int getWhiteFlatGraceTradingDays() {
+        return strategy.white.flatGraceTradingDays;
     }
 
     public static class Market {
@@ -238,15 +238,15 @@ public class InvestmentProperties {
 
     public static class Holding {
 
-        private int allowDuplicateStock = 1;
+        private int maxHoldingsPerStock = 1;
         private int maxHoldings = 50;
 
-        public int getAllowDuplicateStock() {
-            return allowDuplicateStock;
+        public int getMaxHoldingsPerStock() {
+            return maxHoldingsPerStock;
         }
 
-        public void setAllowDuplicateStock(int allowDuplicateStock) {
-            this.allowDuplicateStock = allowDuplicateStock;
+        public void setMaxHoldingsPerStock(int maxHoldingsPerStock) {
+            this.maxHoldingsPerStock = maxHoldingsPerStock;
         }
 
         public int getMaxHoldings() {
@@ -273,9 +273,10 @@ public class InvestmentProperties {
 
     public static class Strategy {
 
-        private RatePolicy takeProfit = new RatePolicy(true, new BigDecimal("0.10"));
-        private RatePolicy stopLoss = new RatePolicy(false, new BigDecimal("-0.10"));
-        private int grayMaxTradingDays = 3;
+        private RatePolicy takeProfit = new RatePolicy(new BigDecimal("0.10"));
+        private RatePolicy stopLoss = new RatePolicy(new BigDecimal("-0.10"));
+        private WhitePolicy white = new WhitePolicy();
+        private GrayPolicy gray = new GrayPolicy();
 
         public RatePolicy getTakeProfit() {
             return takeProfit;
@@ -293,34 +294,59 @@ public class InvestmentProperties {
             this.stopLoss = stopLoss;
         }
 
-        public int getGrayMaxTradingDays() {
-            return grayMaxTradingDays;
+        public WhitePolicy getWhite() {
+            return white;
         }
 
-        public void setGrayMaxTradingDays(int grayMaxTradingDays) {
-            this.grayMaxTradingDays = grayMaxTradingDays;
+        public void setWhite(WhitePolicy white) {
+            this.white = white;
+        }
+
+        public GrayPolicy getGray() {
+            return gray;
+        }
+
+        public void setGray(GrayPolicy gray) {
+            this.gray = gray;
+        }
+
+    }
+
+    public static class WhitePolicy {
+
+        private int flatGraceTradingDays = 3;
+
+        public int getFlatGraceTradingDays() {
+            return flatGraceTradingDays;
+        }
+
+        public void setFlatGraceTradingDays(int flatGraceTradingDays) {
+            this.flatGraceTradingDays = flatGraceTradingDays;
+        }
+    }
+
+    public static class GrayPolicy {
+
+        private int graceTradingDays = 3;
+
+        public int getGraceTradingDays() {
+            return graceTradingDays;
+        }
+
+        public void setGraceTradingDays(int graceTradingDays) {
+            this.graceTradingDays = graceTradingDays;
         }
     }
 
     public static class RatePolicy {
 
-        private boolean enabled;
         private BigDecimal rate;
 
         public RatePolicy() {
         }
 
-        public RatePolicy(boolean enabled, BigDecimal rate) {
-            this.enabled = enabled;
+        public RatePolicy(BigDecimal rate) {
             this.rate = rate;
-        }
-
-        public boolean isEnabled() {
-            return enabled;
-        }
-
-        public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
         }
 
         public BigDecimal getRate() {

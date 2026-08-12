@@ -21,4 +21,10 @@ public interface BrokerClient {
     Map<String, Object> buy(Map<String, Object> request);
 
     Map<String, Object> sell(Map<String, Object> request);
+
+    Map<String, Object> cancel(Map<String, Object> request);
+
+    default List<Map<String, Object>> getOrderStatuses(Map<String, Object> request) {
+        throw new UnsupportedOperationException("KIS order status inquiry is not implemented");
+    }
 }

@@ -24,7 +24,7 @@ public class LiveOrderExecutor implements OrderExecutor {
     public Map<String, Object> buy(Map<String, Object> request) {
         if (exists(MapUtils.string(request, "idempotencyKey"))) {
             String status = tradingMapper.selectOrderStatusByIdempotencyKey(MapUtils.map("idempotencyKey", MapUtils.string(request, "idempotencyKey")));
-            return accepted(null, status == null ? "REUSED" : status, "live buy reused by idempotency key");
+            return reused(status, "live buy reused by idempotency key");
         }
         reserveOrder("BUY", MapUtils.string(request, "stockCode"), MapUtils.decimal(request, "orderQuantity").toPlainString(),
                 MapUtils.value(request, "orderPrice") == null ? null : MapUtils.decimal(request, "orderPrice").toPlainString(),
@@ -47,7 +47,7 @@ public class LiveOrderExecutor implements OrderExecutor {
     public Map<String, Object> sell(Map<String, Object> request) {
         if (exists(MapUtils.string(request, "idempotencyKey"))) {
             String status = tradingMapper.selectOrderStatusByIdempotencyKey(MapUtils.map("idempotencyKey", MapUtils.string(request, "idempotencyKey")));
-            return accepted(null, status == null ? "REUSED" : status, "live sell reused by idempotency key");
+            return reused(status, "live sell reused by idempotency key");
         }
         reserveOrder("SELL", MapUtils.string(request, "stockCode"), MapUtils.decimal(request, "orderQuantity").toPlainString(),
                 MapUtils.value(request, "orderPrice") == null ? null : MapUtils.decimal(request, "orderPrice").toPlainString(),
@@ -112,13 +112,23 @@ public class LiveOrderExecutor implements OrderExecutor {
             return;
         }
         if (!MapUtils.bool(result, "accepted")) {
-            tradingMapper.deleteOrderByIdempotencyKey(MapUtils.map("idempotencyKey", idempotencyKey));
+            tradingMapper.updateOrderBrokerResultByIdempotencyKey(MapUtils.map(
+                    "idempotencyKey", idempotencyKey,
+                    "brokerOrderId", MapUtils.string(result, "brokerOrderId"),
+                    "brokerOrderOrgNo", MapUtils.string(result, "brokerOrderOrgNo"),
+                    "orderStatus", "REJECTED",
+                    "brokerStatus", "REJECTED",
+                    "errorMessage", MapUtils.string(result, "message"),
+                    "updatedAt", OffsetDateTime.now().format(TIME_FORMATTER)
+            ));
             return;
         }
         tradingMapper.updateOrderBrokerResultByIdempotencyKey(MapUtils.map(
                 "idempotencyKey", idempotencyKey,
                 "brokerOrderId", MapUtils.string(result, "brokerOrderId"),
+                "brokerOrderOrgNo", MapUtils.string(result, "brokerOrderOrgNo"),
                 "orderStatus", "ACCEPTED",
+                "brokerStatus", "ACCEPTED",
                 "errorMessage", null,
                 "updatedAt", OffsetDateTime.now().format(TIME_FORMATTER)
         ));
@@ -126,6 +136,16 @@ public class LiveOrderExecutor implements OrderExecutor {
 
     private Map<String, Object> accepted(String brokerOrderId, String status, String message) {
         return MapUtils.map("accepted", true, "brokerOrderId", brokerOrderId, "status", status, "message", message);
+    }
+
+    private Map<String, Object> reused(String status, String message) {
+        String reusedStatus = status == null ? "REUSED" : status;
+        boolean orderAccepted = !"REJECTED".equalsIgnoreCase(reusedStatus)
+                && !"FAILED".equalsIgnoreCase(reusedStatus)
+                && !"CANCELLED".equalsIgnoreCase(reusedStatus)
+                && !"BLOCKED".equalsIgnoreCase(reusedStatus)
+                && !"SKIPPED".equalsIgnoreCase(reusedStatus);
+        return MapUtils.map("accepted", orderAccepted, "brokerOrderId", null, "status", reusedStatus, "message", message);
     }
 
     private Map<String, Object> rejected(String message) {

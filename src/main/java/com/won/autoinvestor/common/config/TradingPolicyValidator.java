@@ -32,9 +32,10 @@ public class TradingPolicyValidator implements ApplicationRunner {
         requireNegative(investmentProperties.getStopLoss().getRate(), "investment.strategy.stop-loss.rate must be < 0");
         requirePositive(investmentProperties.getUnitAmount(), "investment.order.unit-amount must be > 0");
         requirePositive(investmentProperties.getUnitShares(), "investment.order.unit-shares must be > 0");
-        require(investmentProperties.getAllowDuplicateStock() >= 0, "investment.holding.allow-duplicate-stock must be >= 0");
+        require(investmentProperties.getMaxHoldingsPerStock() >= 0, "investment.holding.max-holdings-per-stock must be >= 0");
         require(investmentProperties.getMaxHoldings() >= 0, "investment.holding.max-holdings must be >= 0");
-        require(investmentProperties.getGrayMaxTradingDays() > 0, "investment.strategy.gray-max-trading-days must be > 0");
+        require(investmentProperties.getWhiteFlatGraceTradingDays() >= 0, "investment.strategy.white.flat-grace-trading-days must be >= 0");
+        require(investmentProperties.getGrayGraceTradingDays() >= 0, "investment.strategy.gray.grace-trading-days must be >= 0");
         require("AMOUNT".equalsIgnoreCase(investmentProperties.getOrderUnitType())
                         || "SHARE".equalsIgnoreCase(investmentProperties.getOrderUnitType()),
                 "investment.order.unit-type must be AMOUNT or SHARE");
