@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Auto Investor | 보유 현황</title>
+    <style>
+        :root {
+            --ink: #152331;
+            --muted: #687887;
+            --line: #d7e0e7;
+            --surface: #ffffff;
+            --canvas: #eef3f6;
+            --navy: #102b43;
+            --teal: #147d80;
+            --green: #198754;
+            --amber: #b7791f;
+            --red: #c2413b;
+            --blue: #3568a8;
+            --status-white: rgb(200, 55, 55);
+            --status-gray: rgb(54, 104, 180);
+            --status-black: rgb(38, 43, 48);
+            --status-white-bg: rgba(200, 55, 55, .12);
+            --status-gray-bg: rgba(54, 104, 180, .12);
+            --status-black-bg: rgba(38, 43, 48, .16);
+            --chart-text: #152331;
+            --chart-muted: #687887;
+            --chart-grid: #e2e9ed;
+            --chart-grid-strong: #9eafb9;
+            --chart-positive-text: rgb(200, 55, 55);
+            --chart-negative-text: rgb(54, 104, 180);
+            --chart-hole: rgb(255, 255, 255);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --ink: #e7eef4;
+                --muted: #a5b3bf;
+                --line: #334552;
+                --surface: #18242e;
+                --canvas: #0e171f;
+                --navy: #091722;
+                --teal: #63c8c3;
+                --chart-text: #e7eef4;
+                --chart-muted: #a5b3bf;
+                --chart-grid: #344853;
+                --chart-grid-strong: #78909e;
+                --chart-positive-text: rgb(200, 55, 55);
+                --chart-negative-text: rgb(54, 104, 180);
+                --chart-hole: rgb(24, 36, 46);
+                --status-black: rgb(205, 212, 219);
+                --status-white-bg: rgba(200, 55, 55, .24);
+                --status-gray-bg: rgba(54, 104, 180, .24);
+                --status-black-bg: rgba(190, 198, 208, .20);
+            }
+
+            th { background: #22333f; color: #c8d5de; }
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            color: var(--ink);
+            background: var(--canvas);
+            font-family: "Segoe UI", "Malgun Gothic", Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        header {
+            color: #fff;
+            background: var(--navy);
+            border-bottom: 3px solid var(--teal);
+            box-shadow: 0 2px 10px rgba(16, 43, 67, .16);
+        }
+
+        .header-inner, main {
+            width: calc(100% - 32px);
+            margin: 0 auto;
+        }
+
+        .header-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 20px 0 18px;
+        }
+
+        .header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+        .updated-at { min-width: 64px; color: #c8d5df; font-size: 12px; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+
+        h1, h2, p { margin: 0; }
+        h1 { font-size: clamp(22px, 3vw, 30px); letter-spacing: 0; font-weight: 700; }
+        button, select, input {
+            min-height: 38px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--ink);
+            font: inherit;
+        }
+
+        button { padding: 0 14px; cursor: pointer; transition: border-color .15s ease, background-color .15s ease, opacity .15s ease; }
+        button:hover { border-color: var(--teal); background: #f3fbfb; }
+        button:disabled { cursor: wait; opacity: .58; }
+        .header-action { width: 96px; height: 38px; min-height: 38px; padding: 0; border-color: #7aa4ad; color: var(--navy); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .header-action:hover { background: #eaf6f6; }
+
+        main { padding: 24px 0 45px; }
+
+        .metrics {
+            display: flex;
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .metric, .panel {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(35, 58, 75, .06);
+        }
+
+        .metric { flex: 1 1 0; min-width: 0; height: 106px; min-height: 106px; padding: 16px 17px; }
+        .metric-label { color: var(--muted); font-size: 12px; }
+        .metric-value { margin-top: 8px; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+        .metric-sub { margin-top: 5px; color: var(--muted); font-size: 12px; }
+        .metric.metric-state-WHITE { border-top: 3px solid var(--status-white); }
+        .metric.metric-state-WHITE .metric-value { color: var(--status-white); }
+        .metric.metric-state-GRAY { border-top: 3px solid var(--status-gray); }
+        .metric.metric-state-GRAY .metric-value { color: var(--status-gray); }
+        .metric.metric-state-BLACK { border-top: 3px solid var(--status-black); }
+        .metric.metric-state-BLACK .metric-value { color: var(--status-black); }
+
+        .visuals {
+            display: grid;
+            grid-template-columns: 390px 285px minmax(0, 1fr);
+            grid-template-rows: 320px;
+            gap: 14px;
+            margin-bottom: 18px;
+            align-items: stretch;
+        }
+
+        .panel-title {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 15px 17px 0;
+        }
+
+        .table-panel > summary {
+            padding: 16px 17px;
+            cursor: pointer;
+            list-style: none;
+            border-radius: 8px;
+        }
+
+        .table-panel > summary::-webkit-details-marker { display: none; }
+        .table-panel > summary::after { content: "펼치기"; color: var(--teal); font-size: 12px; font-weight: 700; }
+        .table-panel > summary:hover { background: #f6fafb; }
+        .table-panel[open] > summary { border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+        .table-panel[open] > summary::after { content: "접기"; }
+
+        h2 { font-size: 15px; font-weight: 700; }
+        .panel-meta { color: var(--muted); font-size: 12px; }
+        .chart-wrap { position: relative; min-height: 260px; padding: 16px; }
+        canvas { display: block; width: 100%; height: 240px; }
+        .chart-empty { display: grid; place-items: center; min-height: 240px; color: var(--muted); font-size: 13px; }
+        .chart-empty[hidden] { display: none; }
+        .status-panel { height: 320px; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+        .status-panel .chart-wrap { min-height: 0; height: 100%; padding: 8px 16px; display: grid; place-items: center; }
+        .status-panel canvas { width: 100%; height: 100%; }
+        .status-panel .chart-empty { min-height: 0; height: 100%; }
+        .order-panel { height: 320px; min-height: 0; display: flex; flex-direction: column; }
+        .order-summary { flex: 1; min-height: 0; display: grid; gap: 14px; align-content: center; padding: 16px; }
+        .order-summary-row { display: grid; gap: 3px; }
+        .order-summary-row + .order-summary-row { padding-top: 14px; border-top: 1px solid var(--line); }
+        .order-summary-label { color: var(--muted); font-size: 11px; }
+        .order-summary-value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .profit-panel { height: 320px; min-height: 0; display: flex; flex-direction: column; }
+        .profit-layout { flex: 1 1 auto; min-height: 0; display: flex; padding: 8px 16px 16px; }
+        .profit-layout .chart-wrap { flex: 1 1 auto; height: 100%; min-height: 0; padding: 8px 0; }
+        .profit-layout canvas { width: 100%; height: 100%; }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 12px;
+            padding: 0 16px 17px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+        .legend-WHITE { color: var(--status-white); }
+        .legend-GRAY { color: var(--status-gray); }
+        .legend-BLACK { color: var(--status-black); }
+        .dot { width: 9px; height: 9px; border-radius: 50%; }
+        .dot-WHITE { background-color: var(--status-white); }
+        .dot-GRAY { background-color: var(--status-gray); }
+        .dot-BLACK { background-color: var(--status-black); }
+
+        .table-panel { overflow: hidden; }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 14px 17px;
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .toolbar select { padding: 0 10px; }
+        .toolbar input { flex: 1 1 220px; min-width: 180px; padding: 0 10px; }
+        .table-scroll { overflow-x: auto; }
+        table { width: 100%; min-width: 1160px; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 11px 13px; border-bottom: 1px solid #e7ebef; white-space: nowrap; text-align: right; }
+        th { position: sticky; top: 0; z-index: 1; background: #eaf1f4; color: #4b5a68; font-size: 11px; font-weight: 700; }
+        th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+        tbody tr:hover { background: #f7fafb; }
+        .stock-name { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+        .status { display: inline-block; min-width: 56px; padding: 4px 7px; border-radius: 12px; text-align: center; font-size: 11px; font-weight: 700; }
+        .status-WHITE { background: var(--status-white-bg); color: var(--status-white); }
+        .status-GRAY { background: var(--status-gray-bg); color: var(--status-gray); }
+        .status-BLACK { background: var(--status-black-bg); color: var(--status-black); }
+        .stock-status-WHITE strong, .stock-status-WHITE .stock-name { color: var(--status-white); }
+        .stock-status-GRAY strong, .stock-status-GRAY .stock-name { color: var(--status-gray); }
+        .stock-status-BLACK strong, .stock-status-BLACK .stock-name { color: var(--status-black); }
+        .positive { color: var(--status-white); font-weight: 700; }
+        .negative { color: var(--status-gray); font-weight: 700; }
+        .neutral { color: var(--muted); }
+        .empty-row { padding: 40px; text-align: center !important; color: var(--muted); }
+
+        footer { width: calc(100% - 32px); margin: 0 auto; color: var(--muted); font-size: 12px; }
+        @media (max-width: 900px) {
+            .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .visuals { grid-template-columns: 1fr; }
+            .header-inner, main, footer { width: min(100% - 24px, 1480px); }
+        }
+        @media (max-width: 560px) {
+            .header-inner { align-items: flex-start; flex-direction: column; }
+            .header-actions { width: 100%; justify-content: flex-start; }
+            .metrics { grid-template-columns: 1fr; }
+            .updated-at { text-align: left; }
+            .order-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); min-height: 0; }
+            .order-summary-row + .order-summary-row { padding-top: 0; border-top: 0; border-left: 1px solid var(--line); padding-left: 16px; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <div class="header-inner">
+        <div>
+            <h1>Auto Investor</h1>
+        </div>
+        <div class="header-actions">
+            <span class="updated-at" id="updatedAt">조회 전</span>
+            <button class="header-action" id="refreshButton" type="button">새로고침 10</button>
+            <button class="header-action" id="maintenanceButton" type="button">갱신</button>
+            <button class="header-action" id="tradingButton" type="button">동기화</button>
+        </div>
+    </div>
+</header>
+
+<main>
+    <section class="metrics" aria-label="보유 요약">
+        <article class="metric"><div class="metric-label">보유 종목</div><div class="metric-value" id="holdingCount">-</div><div class="metric-sub" id="holdingCapacitySub">한도 - · 여유 - · 종목중복 -</div></article>
+        <article class="metric"><div class="metric-label">평가 손익률</div><div class="metric-value" id="profitRate">-</div><div class="metric-sub">보유 포지션 평균</div></article>
+        <article class="metric"><div class="metric-label">투자 원금</div><div class="metric-value" id="investedAmount">-</div><div class="metric-sub">보유 종목 매수금액 합계</div></article>
+        <article class="metric"><div class="metric-label">평가 금액</div><div class="metric-value" id="valuationAmount">-</div><div class="metric-sub">현재가 기준 평가금액</div></article>
+        <article class="metric"><div class="metric-label">주식 포함 총자산</div><div class="metric-value" id="totalValuationAmount">-</div><div class="metric-sub">KIS 계좌 평가금액</div></article>
+        <article class="metric"><div class="metric-label">남은 현금</div><div class="metric-value" id="cashBalance">-</div><div class="metric-sub">KIS 계좌 조회 잔액</div></article>
+    </section>
+
+    <section class="visuals">
+        <article class="panel status-panel">
+            <div class="panel-title"><h2>상태 분포</h2><span class="panel-meta" id="stateMeta">-</span></div>
+            <div class="chart-wrap"><canvas id="statusChart" aria-label="WHITE GRAY BLACK 상태 분포 차트"></canvas><div class="chart-empty" id="statusEmpty" hidden>표시할 포지션이 없습니다.</div></div>
+            <div class="legend" id="statusLegend"></div>
+        </article>
+        <article class="panel order-panel">
+            <div class="panel-title"><h2>최근 성공 주문</h2><span class="panel-meta">체결 완료(24시간)</span></div>
+            <aside class="order-summary" aria-label="최근 24시간 성공 주문">
+                <div class="order-summary-row"><span class="order-summary-label">매도 성공</span><strong class="order-summary-value" id="sellSuccessCount">-</strong></div>
+                <div class="order-summary-row"><span class="order-summary-label">매수 성공</span><strong class="order-summary-value" id="buySuccessCount">-</strong></div>
+            </aside>
+        </article>
+        <article class="panel profit-panel">
+            <div class="panel-title"><h2>종목별 수익률</h2><span class="panel-meta">WHITE/GRAY 상위 20개</span></div>
+            <div class="profit-layout">
+                <div class="chart-wrap"><canvas id="profitChart" aria-label="종목별 수익률 차트"></canvas><div class="chart-empty" id="profitEmpty" hidden>표시할 포지션이 없습니다.</div></div>
+            </div>
+        </article>
+    </section>
+
+    <details class="panel table-panel">
+        <summary class="panel-title"><h2>전체 보유 포지션</h2><span class="panel-meta" id="rowMeta">-</span></summary>
+        <div class="toolbar">
+            <select id="statusFilter" aria-label="상태 필터">
+                <option value="ALL">전체 상태</option>
+                <option value="WHITE">WHITE</option>
+                <option value="GRAY">GRAY</option>
+                <option value="BLACK">BLACK</option>
+            </select>
+            <input id="searchInput" type="search" placeholder="종목코드 또는 종목명 검색" aria-label="종목 검색">
+        </div>
+        <div class="table-scroll">
+            <table>
+                <thead>
+                <tr>
+                    <th>상태</th><th>종목</th><th>보유수량</th><th>평균매수가</th><th>현재가</th><th>투자원금</th><th>평가금액</th><th>수익률</th><th>상태시간</th><th>주문</th><th>최종평가</th>
+                </tr>
+                </thead>
+                <tbody id="positionsBody"><tr><td class="empty-row" colspan="11">데이터를 불러오는 중입니다.</td></tr></tbody>
+            </table>
+        </div>
+    </details>
+</main>
+
+<script>
+    const statusStyle = getComputedStyle(document.documentElement);
+    const stateColors = {
+        WHITE: statusStyle.getPropertyValue('--status-white').trim(),
+        GRAY: statusStyle.getPropertyValue('--status-gray').trim(),
+        BLACK: statusStyle.getPropertyValue('--status-black').trim()
+    };
+    const stateRgb = Object.fromEntries(Object.entries(stateColors).map(([status, color]) => [status, parseRgb(color)]));
+    const chartColors = {
+        text: statusStyle.getPropertyValue('--chart-text').trim(),
+        muted: statusStyle.getPropertyValue('--chart-muted').trim(),
+        grid: statusStyle.getPropertyValue('--chart-grid').trim(),
+        gridStrong: statusStyle.getPropertyValue('--chart-grid-strong').trim(),
+        hole: statusStyle.getPropertyValue('--chart-hole').trim()
+    };
+    const REFRESH_INTERVAL_MS = 10000;
+    const BATCH_LOCK_MS = 60000;
+    const BATCH_COOLDOWN_KEY = 'auto-investor.batch-cooldown-until';
+    let allPositions = [];
+    let stockValuationAmount = 0;
+    let takeProfitRate = 0.10;
+    let stopLossRate = -0.10;
+    let lastRefreshSlot = Math.floor(Date.now() / REFRESH_INTERVAL_MS);
+
+    const number = value => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    function parseRgb(color) {
+        const values = String(color).match(/\d+(?:\.\d+)?/g);
+        return values && values.length >= 3 ? values.slice(0, 3).map(Number) : [128, 128, 128];
+    }
+
+    function mixRgb(first, second, ratio) {
+        return first.map((value, index) => Math.round(value + (second[index] - value) * ratio));
+    }
+
+    function rgbText(rgb) {
+        return `rgb(${rgb.join(', ')})`;
+    }
+
+    function createStateGradient(context, status, top, bottom) {
+        const base = stateRgb[status] || [128, 128, 128];
+        const light = mixRgb(base, [255, 255, 255], .08);
+        const dark = mixRgb(base, [0, 0, 0], .08);
+        const gradient = context.createLinearGradient(0, top, 0, bottom);
+        gradient.addColorStop(0, rgbText(light));
+        gradient.addColorStop(.25, rgbText(mixRgb(light, base, .5)));
+        gradient.addColorStop(.5, rgbText(base));
+        gradient.addColorStop(.75, rgbText(mixRgb(base, dark, .5)));
+        gradient.addColorStop(1, rgbText(dark));
+        return gradient;
+    }
+
+    function setMetricState(elementId, state) {
+        const element = document.getElementById(elementId);
+        const card = element?.closest('.metric');
+        if (!card) return;
+        card.classList.remove('metric-state-WHITE', 'metric-state-GRAY', 'metric-state-BLACK');
+        if (state === 'WHITE' || state === 'GRAY' || state === 'BLACK') {
+            card.classList.add(`metric-state-${state}`);
+        }
+    }
+
+    const formatNumber = value => number(value).toLocaleString('ko-KR', { maximumFractionDigits: 4 });
+    const formatSignedNumber = value => `${number(value) > 0 ? '+' : ''}${formatNumber(value)}`;
+    const formatPercent = value => `${number(value).toFixed(2)}%`;
+    const formatDate = value => value ? String(value).replace('T', ' ').replace(/([+-]\d\d:\d\d|\.\d+)?$/, '').slice(0, 19) : '-';
+    const statusOf = row => String(row.status ?? row.STATUS ?? '').toUpperCase();
+    const statusElapsedHours = value => {
+        const enteredAt = value ? new Date(value).getTime() : NaN;
+        if (!Number.isFinite(enteredAt)) return '-';
+        return `${Math.max(0, Math.floor((Date.now() - enteredAt) / 3600000))}시간`;
+    };
+
+    function summarize(rows, maxHoldings, maxHoldingsPerStock) {
+        const invested = rows.reduce((sum, row) => sum + number(row.investedAmount), 0);
+        const valuation = rows.reduce((sum, row) => sum + number(row.currentValuationAmount), 0);
+        stockValuationAmount = valuation;
+        const averageRate = rows.length ? rows.reduce((sum, row) => sum + number(row.profitRate || row.returnRate), 0) / rows.length : 0;
+        document.getElementById('holdingCount').textContent = rows.length.toLocaleString('ko-KR');
+        document.getElementById('investedAmount').textContent = formatNumber(invested);
+        document.getElementById('valuationAmount').textContent = formatNumber(valuation);
+        const rate = document.getElementById('profitRate');
+        rate.textContent = formatPercent(averageRate * 100);
+        rate.className = `metric-value ${averageRate > 0 ? 'positive' : averageRate < 0 ? 'negative' : 'neutral'}`;
+        setMetricState('holdingCount', number(maxHoldings) > 0 && rows.length >= number(maxHoldings) ? 'WHITE' : 'GRAY');
+        setMetricState('profitRate', averageRate > 0 ? 'WHITE' : averageRate < 0 ? 'BLACK' : 'GRAY');
+        setMetricState('investedAmount', 'GRAY');
+        setMetricState('valuationAmount', valuation > invested ? 'WHITE' : valuation < invested ? 'BLACK' : 'GRAY');
+        setMetricState('totalValuationAmount', 'GRAY');
+        setMetricState('cashBalance', 'GRAY');
+        const capacitySub = document.getElementById('holdingCapacitySub');
+        if (maxHoldings === undefined || maxHoldings === null || maxHoldings === '') {
+            capacitySub.textContent = '한도 - · 여유 - · 종목중복 -';
+        } else if (number(maxHoldings) === 0) {
+            capacitySub.textContent = `한도 ∞ · 여유 ∞ · 종목중복 ${number(maxHoldingsPerStock) === 0 ? '∞' : number(maxHoldingsPerStock).toLocaleString('ko-KR')}`;
+        } else {
+            const available = Math.max(number(maxHoldings) - rows.length, 0);
+            const duplicate = number(maxHoldingsPerStock) === 0 ? '∞' : number(maxHoldingsPerStock).toLocaleString('ko-KR');
+            capacitySub.textContent = `한도 ${number(maxHoldings).toLocaleString('ko-KR')} · 여유 ${available.toLocaleString('ko-KR')} · 종목중복 ${duplicate}`;
+        }
+    }
+
+    function setCanvasSize(canvas) {
+        const ratio = window.devicePixelRatio || 1;
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        canvas.width = width * ratio;
+        canvas.height = height * ratio;
+        const context = canvas.getContext('2d');
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+        return { context, width, height };
+    }
+
+    function drawStatusChart(rows) {
+        const canvas = document.getElementById('statusChart');
+        const empty = document.getElementById('statusEmpty');
+        const legend = document.getElementById('statusLegend');
+        const counts = { WHITE: 0, GRAY: 0, BLACK: 0 };
+        rows.forEach(row => { const status = statusOf(row); if (counts[status] !== undefined) counts[status]++; });
+        const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+        legend.innerHTML = Object.entries(counts).map(([status, count]) => `<span class="legend-item legend-${status}"><i class="dot dot-${status}"></i>${status} ${count}</span>`).join('');
+        document.getElementById('stateMeta').textContent = `${total}개`;
+        empty.hidden = total > 0;
+        canvas.hidden = total === 0;
+        if (!total) return;
+        const { context, width, height } = setCanvasSize(canvas);
+        context.globalAlpha = 1;
+        context.globalCompositeOperation = 'source-over';
+        const centerX = width / 2, centerY = height / 2, radius = Math.min(width, height) * .32;
+        let start = -Math.PI / 2;
+        Object.entries(counts).forEach(([status, count]) => {
+            if (!count) return;
+            const end = start + Math.PI * 2 * count / total;
+            context.beginPath(); context.moveTo(centerX, centerY); context.arc(centerX, centerY, radius, start, end); context.closePath();
+            context.fillStyle = stateColors[status]; context.fill(); start = end;
+        });
+        start = -Math.PI / 2;
+        context.font = '700 12px Segoe UI';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        Object.entries(counts).forEach(([status, count]) => {
+            if (!count) return;
+            const end = start + Math.PI * 2 * count / total;
+            const angle = start + (end - start) / 2;
+            const labelRadius = radius * 1.35;
+            const labelX = centerX + Math.cos(angle) * labelRadius;
+            const labelY = centerY + Math.sin(angle) * labelRadius;
+            context.fillStyle = stateColors[status];
+            context.fillText(`${status} ${count}`, labelX, labelY);
+            start = end;
+        });
+        context.beginPath(); context.arc(centerX, centerY, radius * .58, 0, Math.PI * 2); context.fillStyle = chartColors.hole; context.fill();
+        context.fillStyle = chartColors.text; context.font = '700 22px Segoe UI'; context.textAlign = 'center'; context.fillText(total, centerX, centerY + 7);
+    }
+
+    function profitRows(rows) {
+        return [...rows]
+            .filter(row => statusOf(row) !== 'BLACK')
+            .sort((a, b) => number(b.profitRate || b.returnRate) - number(a.profitRate || a.returnRate))
+            .slice(0, 20);
+    }
+
+    function drawProfitChart(rows) {
+        const canvas = document.getElementById('profitChart');
+        const empty = document.getElementById('profitEmpty');
+        const sorted = profitRows(rows);
+        empty.hidden = sorted.length > 0; canvas.hidden = sorted.length === 0;
+        if (!sorted.length) return;
+        const { context, width, height } = setCanvasSize(canvas);
+        const left = 42, right = 12, top = 44, bottom = 58;
+        const plotWidth = width - left - right, plotHeight = height - top - bottom;
+        const configuredScale = Math.max(Math.abs(takeProfitRate * 100), Math.abs(stopLossRate * 100), 1);
+        const scaleMax = configuredScale;
+        const tickDecimals = Number.isInteger(scaleMax / 5) ? 0 : 1;
+        const zeroY = height - bottom;
+        context.save();
+        context.font = '10px Segoe UI';
+        context.textBaseline = 'middle';
+        context.setLineDash([3, 3]);
+        for (let tick = 0; tick <= 5; tick++) {
+            const ratio = tick / 5;
+            const tickValue = (scaleMax * ratio).toFixed(tickDecimals);
+            const y = zeroY - plotHeight * ratio;
+            context.strokeStyle = tick === 0 || tick === 5 ? chartColors.gridStrong : chartColors.grid;
+            context.beginPath(); context.moveTo(left, y); context.lineTo(width - right, y); context.stroke();
+            context.fillStyle = chartColors.muted; context.textAlign = 'right'; context.fillText(`${tickValue}%`, left - 6, y);
+        }
+        context.restore();
+        const columnWidth = plotWidth / sorted.length;
+        const barWidth = Math.max(8, columnWidth * .62);
+        context.font = '700 8px Segoe UI';
+        sorted.forEach((row, index) => {
+            const rate = number(row.profitRate || row.returnRate) * 100;
+            const centerX = left + columnWidth * index + columnWidth * .5;
+            const barHeight = Math.max(3, Math.min(plotHeight, Math.abs(rate) / scaleMax * plotHeight));
+            const barY = zeroY - barHeight;
+            const stockLabel = String(row.stockCode || '').slice(0, 9);
+            const status = statusOf(row);
+            context.fillStyle = createStateGradient(context, status, barY, zeroY);
+            context.fillRect(centerX - barWidth * .5, barY, barWidth, barHeight);
+            const changeAmount = number(row.currentValuationAmount) - number(row.investedAmount);
+            context.fillStyle = stateColors[status] || chartColors.text; context.textAlign = 'center';
+            context.font = '700 8px Segoe UI';
+            context.fillText(`${rate >= 0 ? '+' : ''}${rate.toFixed(2)}%`, centerX, top - 20);
+            context.font = '700 7px Segoe UI';
+            context.fillText(`(${formatSignedNumber(changeAmount)})`, centerX, top - 8);
+            context.font = '700 9px Segoe UI';
+            context.fillStyle = stateColors[status] || chartColors.text; context.textAlign = 'center'; context.textBaseline = 'top';
+            context.fillText(stockLabel, centerX, height - bottom + 10);
+            context.textBaseline = 'alphabetic';
+        });
+        context.strokeStyle = chartColors.gridStrong; context.beginPath(); context.moveTo(left, top); context.lineTo(left, height - bottom); context.stroke();
+    }
+
+    async function loadStrategyScale() {
+        try {
+            const response = await fetch('/api/system/status', { cache: 'no-store' });
+            if (!response.ok) return;
+            const status = await response.json();
+            const configuredTakeProfit = Number(status.takeProfitRate);
+            const configuredStopLoss = Number(status.stopLossRate);
+            if (Number.isFinite(configuredTakeProfit) && configuredTakeProfit > 0) takeProfitRate = configuredTakeProfit;
+            if (Number.isFinite(configuredStopLoss) && configuredStopLoss < 0) stopLossRate = configuredStopLoss;
+        } catch (error) {
+            // Keep the dashboard fallback scale when strategy settings are unavailable.
+        }
+    }
+
+    function renderTable() {
+        const filter = document.getElementById('statusFilter').value;
+        const query = document.getElementById('searchInput').value.trim().toLowerCase();
+        const statusPriority = { BLACK: 0, WHITE: 1, GRAY: 2 };
+        const rows = allPositions.filter(row => {
+            const status = statusOf(row);
+            const matchesStatus = filter === 'ALL' || status === filter;
+            const matchesQuery = !query || String(row.stockCode || '').toLowerCase().includes(query) || String(row.stockName || '').toLowerCase().includes(query);
+            return matchesStatus && matchesQuery;
+        }).sort((a, b) => {
+            const statusDifference = (statusPriority[statusOf(a)] ?? 99) - (statusPriority[statusOf(b)] ?? 99);
+            if (statusDifference !== 0) return statusDifference;
+            const rateDifference = number(b.profitRate || b.returnRate) - number(a.profitRate || a.returnRate);
+            if (rateDifference !== 0) return rateDifference;
+            const nameDifference = String(a.stockName || '').localeCompare(String(b.stockName || ''), 'ko');
+            if (nameDifference !== 0) return nameDifference;
+            return String(a.stockCode || '').localeCompare(String(b.stockCode || ''));
+        });
+        document.getElementById('rowMeta').textContent = `${rows.length} / ${allPositions.length}개`;
+        document.getElementById('positionsBody').innerHTML = rows.length ? rows.map(row => {
+            const status = statusOf(row);
+            const rate = number(row.profitRate || row.returnRate) * 100;
+            const rateClass = rate > 0 ? 'positive' : rate < 0 ? 'negative' : 'neutral';
+            const openOrders = number(row.openBuyOrderCount) + number(row.openSellOrderCount);
+            return `<tr>
+                <td><span class="status status-${status}">${status || '-'}</span></td>
+                <td class="stock-status-${status}"><strong>${row.stockCode || '-'}</strong><span class="stock-name">${row.stockName || '-'}</span></td>
+                <td>${formatNumber(row.holdingQuantity || row.purchaseQuantity)}</td>
+                <td>${formatNumber(row.averageBuyPrice || row.purchasePrice)}</td>
+                <td>${formatNumber(row.currentPrice)}</td>
+                <td>${formatNumber(row.investedAmount)}</td>
+                <td>${formatNumber(row.currentValuationAmount)}</td>
+                <td class="${rateClass}">${rate.toFixed(2)}%</td>
+                <td>${statusElapsedHours(row.statusEnteredAt)}</td>
+                <td>${openOrders ? `${openOrders}건` : '-'}</td>
+                <td>${formatDate(row.lastEvaluatedAt || row.updatedAt)}</td>
+            </tr>`;
+        }).join('') : '<tr><td class="empty-row" colspan="11">조건에 맞는 포지션이 없습니다.</td></tr>';
+    }
+
+    async function loadDashboard() {
+        try {
+            await loadStrategyScale();
+            const response = await fetch('/api/positions/detail', { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const payload = await response.json();
+            allPositions = Array.isArray(payload.positions) ? payload.positions : [];
+            summarize(allPositions, payload.maxHoldings, payload.maxHoldingsPerStock); drawStatusChart(allPositions); drawProfitChart(allPositions); renderTable();
+            document.getElementById('updatedAt').textContent = new Date().toLocaleTimeString('en-GB', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        } catch (error) {
+            ['holdingCount', 'profitRate', 'investedAmount', 'valuationAmount'].forEach(id => setMetricState(id, 'BLACK'));
+            document.getElementById('positionsBody').innerHTML = '<tr><td class="empty-row" colspan="11">API 서버가 실행 중인지 확인해주세요.</td></tr>';
+        }
+        loadAccountBalance();
+        loadOrderSummary();
+    }
+
+    async function loadAccountBalance() {
+        try {
+            const response = await fetch('/api/account/balance', { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const account = await response.json();
+            if (account.available === false) {
+                setMetricState('totalValuationAmount', 'BLACK');
+                setMetricState('cashBalance', 'BLACK');
+                return;
+            }
+            const cashBalance = number(account.cashBalance);
+            document.getElementById('totalValuationAmount').textContent = formatNumber(cashBalance + stockValuationAmount);
+            document.getElementById('cashBalance').textContent = formatNumber(cashBalance);
+            setMetricState('totalValuationAmount', 'WHITE');
+            setMetricState('cashBalance', cashBalance > 0 ? 'WHITE' : 'GRAY');
+        } catch (error) {
+            setMetricState('totalValuationAmount', 'BLACK');
+            setMetricState('cashBalance', 'BLACK');
+            // Keep the last successful DB snapshot when a refresh temporarily fails.
+        }
+    }
+
+    async function loadOrderSummary() {
+        try {
+            const response = await fetch('/api/orders/summary', { cache: 'no-store' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const summary = await response.json();
+            document.getElementById('sellSuccessCount').textContent = formatNumber(summary.sellSuccessCount);
+            document.getElementById('buySuccessCount').textContent = formatNumber(summary.buySuccessCount);
+        } catch (error) {
+            // Keep the last successful summary when a refresh temporarily fails.
+        }
+    }
+
+    function updateRefreshCountdown() {
+        const elapsed = Date.now() % REFRESH_INTERVAL_MS;
+        const remaining = Math.ceil((REFRESH_INTERVAL_MS - elapsed) / 1000);
+        const displayRemaining = remaining === 10 ? 0 : remaining;
+        document.getElementById('refreshButton').textContent = `새로고침 ${displayRemaining}`;
+    }
+
+    function updateBatchButtons() {
+        const maintenanceButton = document.getElementById('maintenanceButton');
+        const tradingButton = document.getElementById('tradingButton');
+        const cooldownUntil = Number(localStorage.getItem(BATCH_COOLDOWN_KEY) || 0);
+        const remaining = Math.ceil((cooldownUntil - Date.now()) / 1000);
+        if (remaining > 0) {
+            maintenanceButton.disabled = true;
+            tradingButton.disabled = true;
+            maintenanceButton.textContent = `갱신 ${remaining}`;
+            tradingButton.textContent = `동기화 ${remaining}`;
+            return;
+        }
+        localStorage.removeItem(BATCH_COOLDOWN_KEY);
+        maintenanceButton.disabled = false;
+        tradingButton.disabled = false;
+        maintenanceButton.textContent = '갱신';
+        tradingButton.textContent = '동기화';
+    }
+
+    async function requestBatch(path) {
+        const cooldownUntil = Date.now() + BATCH_LOCK_MS;
+        localStorage.setItem(BATCH_COOLDOWN_KEY, String(cooldownUntil));
+        updateBatchButtons();
+        try {
+            const response = await fetch(path, { method: 'POST' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            await loadDashboard();
+        } catch (error) {
+            document.getElementById('updatedAt').textContent = new Date().toLocaleTimeString('en-GB', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        }
+    }
+
+    document.getElementById('refreshButton').addEventListener('click', loadDashboard);
+    document.getElementById('maintenanceButton').addEventListener('click', () => requestBatch('/api/trading/maintenance'));
+    document.getElementById('tradingButton').addEventListener('click', () => requestBatch('/api/trading/run-cycle'));
+    document.getElementById('statusFilter').addEventListener('change', renderTable);
+    document.getElementById('searchInput').addEventListener('input', renderTable);
+    window.addEventListener('resize', () => { drawStatusChart(allPositions); drawProfitChart(allPositions); });
+
+    window.setInterval(() => {
+        updateRefreshCountdown();
+        updateBatchButtons();
+        const refreshSlot = Math.floor(Date.now() / REFRESH_INTERVAL_MS);
+        if (refreshSlot !== lastRefreshSlot) {
+            lastRefreshSlot = refreshSlot;
+            loadDashboard();
+        }
+    }, 1000);
+
+    loadDashboard();
+    updateRefreshCountdown();
+    updateBatchButtons();
+</script>
+</body>
+</html>

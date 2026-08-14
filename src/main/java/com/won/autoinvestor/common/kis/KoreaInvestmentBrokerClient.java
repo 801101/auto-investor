@@ -113,9 +113,23 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
             return;
         }
         for (JsonNode row : rows) {
+            String accountSyncSource = "KIS_HOLDING";
             BigDecimal quantity = isOverseasMarket()
-                    ? decimalFirst(row, "ovrs_cblc_qty", "hldg_qty", "ord_psbl_qty")
+                    ? decimal(row, "ovrs_cblc_qty")
                     : decimal(row, "hldg_qty");
+            if (quantity.signum() <= 0 && isOverseasMarket()) {
+                quantity = decimal(row, "hldg_qty");
+                if (quantity.signum() > 0) {
+                    accountSyncSource = "KIS_HOLDING_FALLBACK";
+                }
+            }
+            if (quantity.signum() <= 0 && isOverseasMarket()) {
+                // KIS 응답에 보유수량 필드가 없을 때만 대체값을 사용하고 출처를 반드시 남긴다.
+                quantity = decimal(row, "ord_psbl_qty");
+                if (quantity.signum() > 0) {
+                    accountSyncSource = "ORDERABLE_QTY_FALLBACK";
+                }
+            }
             if (quantity.signum() <= 0) {
                 continue;
             }
@@ -123,7 +137,8 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
                     "stockCode", textFirst(row, "ovrs_pdno", "pdno"),
                     "stockName", textFirst(row, "ovrs_item_name", "prdt_name"),
                     "quantity", quantity,
-                    "averagePrice", decimalFirst(row, "pchs_avg_pric", "avg_unpr3")
+                    "averagePrice", decimalFirst(row, "pchs_avg_pric", "avg_unpr3"),
+                    "accountSyncSource", accountSyncSource
             ));
         }
     }
@@ -375,6 +390,8 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
                 "orderType", "02".equals(textFirst(row, "sll_buy_dvsn_cd", "SLL_BUY_DVSN_CD")) ? "BUY" : "SELL",
                 "requestedQuantity", requestedQuantity,
                 "filledQuantity", filledQuantity,
+                "filledPrice", decimalFirst(row, overseas ? "ft_ccld_unpr3" : "avg_prvs",
+                        "FT_CCLD_UNPR3", "AVG_PRVS"),
                 "remainingQuantity", remainingQuantity,
                 "brokerStatus", brokerStatus,
                 "brokerCancellationYn", textFirst(row, "cncl_yn", "CNCL_YN"),

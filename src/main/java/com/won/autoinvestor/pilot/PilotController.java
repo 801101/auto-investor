@@ -32,9 +32,24 @@ public class PilotController {
         return pilotService.getPositions();
     }
 
+    @GetMapping("/positions/detail")
+    public Map<String, Object> positionDetails() {
+        return pilotService.getPositionDetails();
+    }
+
     @GetMapping("/account")
     public Map<String, Object> account() {
         return pilotService.getAccount();
+    }
+
+    @GetMapping("/account/balance")
+    public Map<String, Object> accountBalance() {
+        return pilotService.getAccountBalanceSnapshot();
+    }
+
+    @GetMapping("/orders/summary")
+    public Map<String, Object> orderSummary() {
+        return pilotService.getOrderSuccessSummary24h();
     }
 
     @GetMapping("/overseas/dashboard")
@@ -56,6 +71,12 @@ public class PilotController {
     @PostMapping("/trading/sync")
     public Map<String, Object> sync() {
         pilotService.syncAccount();
+        return Map.of("status", "requested");
+    }
+
+    @PostMapping("/trading/maintenance")
+    public Map<String, Object> maintenance() {
+        pilotService.runMaintenanceCycle();
         return Map.of("status", "requested");
     }
 

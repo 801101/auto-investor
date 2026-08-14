@@ -47,16 +47,7 @@
             COALESCE((SELECT COUNT(*) FROM ORDERS WHERE ORDER_TYPE = 'BUY' AND ORDER_STATUS IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')), 0)
     </select>
 
-    <select id="selectActivePositionIdByStockCode" resultType="long">
-        SELECT ID
-        FROM POSITIONS
-        WHERE STOCK_CODE = #{stockCode}
-          AND ACTIVE = 'Y'
-        ORDER BY ID DESC
-        LIMIT 1
-    </select>
-
-    <select id="selectActivePositionByStockCode" resultType="map">
+    <select id="selectActivePositionsByStockCode" resultType="map">
         SELECT
             ID,
             STOCK_CODE AS stockCode,
@@ -80,9 +71,61 @@
             RETURN_RATE AS returnRate,
             LAST_EVALUATED_AT AS lastEvaluatedAt,
             FLAT_STARTED_DATE AS flatStartedDate,
+            FLAT_ACTIVE AS flatActive,
             ACTIVE,
             CREATED_AT AS createdAt,
             UPDATED_AT AS updatedAt
+        FROM POSITIONS
+        WHERE STOCK_CODE = #{stockCode}
+          AND ACTIVE = 'Y'
+        ORDER BY ID ASC
+    </select>
+
+    <select id="selectPositionById" resultType="map">
+        SELECT
+            ID,
+            STOCK_CODE AS stockCode,
+            STOCK_NAME AS stockName,
+            STATUS,
+            PURCHASE_PRICE AS purchasePrice,
+            PURCHASE_QUANTITY AS purchaseQuantity,
+            INVESTED_AMOUNT AS investedAmount,
+            CURRENT_PRICE AS currentPrice,
+            CURRENT_VALUATION_AMOUNT AS currentValuationAmount,
+            PROFIT_RATE AS profitRate,
+            LAST_EVALUATED_PRICE AS lastEvaluatedPrice,
+            STATUS_REFERENCE_PRICE AS statusReferencePrice,
+            GRAY_ENTERED_DATE AS grayEnteredDate,
+            GRAY_TRADING_DAYS AS grayTradingDays,
+            AVERAGE_BUY_PRICE AS averageBuyPrice,
+            REFERENCE_PRICE AS referencePrice,
+            HIGHEST_PRICE AS highestPrice,
+            LOWEST_PRICE AS lowestPrice,
+            HOLDING_QUANTITY AS holdingQuantity,
+            RETURN_RATE AS returnRate,
+            LAST_EVALUATED_AT AS lastEvaluatedAt,
+            FLAT_STARTED_DATE AS flatStartedDate,
+            FLAT_ACTIVE AS flatActive,
+            ACTIVE,
+            CREATED_AT AS createdAt,
+            UPDATED_AT AS updatedAt
+        FROM POSITIONS
+        WHERE ID = #{positionId}
+    </select>
+
+    <select id="selectLatestActivePositionByStockCode" resultType="map">
+        SELECT ID, STOCK_CODE AS stockCode, STATUS, PURCHASE_PRICE AS purchasePrice,
+               PURCHASE_QUANTITY AS purchaseQuantity, INVESTED_AMOUNT AS investedAmount,
+               CURRENT_PRICE AS currentPrice, CURRENT_VALUATION_AMOUNT AS currentValuationAmount,
+               PROFIT_RATE AS profitRate, LAST_EVALUATED_PRICE AS lastEvaluatedPrice,
+               STATUS_REFERENCE_PRICE AS statusReferencePrice, GRAY_ENTERED_DATE AS grayEnteredDate,
+               GRAY_TRADING_DAYS AS grayTradingDays, AVERAGE_BUY_PRICE AS averageBuyPrice,
+               REFERENCE_PRICE AS referencePrice, HIGHEST_PRICE AS highestPrice,
+               LOWEST_PRICE AS lowestPrice, HOLDING_QUANTITY AS holdingQuantity,
+               RETURN_RATE AS returnRate, LAST_EVALUATED_AT AS lastEvaluatedAt,
+               FLAT_STARTED_DATE AS flatStartedDate, FLAT_ACTIVE AS flatActive,
+               ACCOUNT_SYNC_SOURCE AS accountSyncSource, LIFECYCLE_KEY AS lifecycleKey,
+               ACTIVE, CREATED_AT AS createdAt, UPDATED_AT AS updatedAt
         FROM POSITIONS
         WHERE STOCK_CODE = #{stockCode}
           AND ACTIVE = 'Y'
@@ -112,9 +155,12 @@
             LOWEST_PRICE AS lowestPrice,
             HOLDING_QUANTITY AS holdingQuantity,
             RETURN_RATE AS returnRate,
-            LAST_EVALUATED_AT AS lastEvaluatedAt,
-            FLAT_STARTED_DATE AS flatStartedDate,
-            ACTIVE,
+             LAST_EVALUATED_AT AS lastEvaluatedAt,
+             FLAT_STARTED_DATE AS flatStartedDate,
+             FLAT_ACTIVE AS flatActive,
+             ACCOUNT_SYNC_SOURCE AS accountSyncSource,
+             LIFECYCLE_KEY AS lifecycleKey,
+             ACTIVE,
             CREATED_AT AS createdAt,
             UPDATED_AT AS updatedAt
         FROM POSITIONS
@@ -122,6 +168,111 @@
           AND STATUS != 'CLOSED'
         ORDER BY ID ASC
     </select>
+
+    <select id="selectDashboardPositions" resultType="map">
+        SELECT
+            p.ID,
+            p.STOCK_CODE AS stockCode,
+            p.STOCK_NAME AS stockName,
+            p.STATUS AS status,
+            p.PURCHASE_PRICE AS purchasePrice,
+            p.PURCHASE_QUANTITY AS purchaseQuantity,
+            p.INVESTED_AMOUNT AS investedAmount,
+            p.CURRENT_PRICE AS currentPrice,
+            p.CURRENT_VALUATION_AMOUNT AS currentValuationAmount,
+            p.PROFIT_RATE AS profitRate,
+            p.LAST_EVALUATED_PRICE AS lastEvaluatedPrice,
+            p.STATUS_REFERENCE_PRICE AS statusReferencePrice,
+            p.GRAY_ENTERED_DATE AS grayEnteredDate,
+            p.GRAY_TRADING_DAYS AS grayTradingDays,
+            p.AVERAGE_BUY_PRICE AS averageBuyPrice,
+            p.REFERENCE_PRICE AS referencePrice,
+            p.HIGHEST_PRICE AS highestPrice,
+            p.LOWEST_PRICE AS lowestPrice,
+            p.HOLDING_QUANTITY AS holdingQuantity,
+            p.RETURN_RATE AS returnRate,
+            p.LAST_EVALUATED_AT AS lastEvaluatedAt,
+            COALESCE((
+                SELECT MAX(h.OCCURRED_AT)
+                FROM TRADE_LIFECYCLE_HISTORY h
+                WHERE h.LIFECYCLE_ID = p.ID
+                  AND (
+                      (p.STATUS = 'WHITE' AND h.EVENT_TYPE IN ('BUY_FILLED', 'WHITE_ENTERED', 'WHITE_RECOVERED', 'ACCOUNT_SYNC_CREATED'))
+                      OR (p.STATUS = 'GRAY' AND h.EVENT_TYPE = 'WHITE_TO_GRAY')
+                      OR (p.STATUS = 'BLACK' AND h.EVENT_TYPE IN ('BLACK_ENTERED', 'TAKE_PROFIT_TRIGGERED', 'STOP_LOSS_TRIGGERED'))
+                  )
+            ), p.CREATED_AT) AS statusEnteredAt,
+            p.ACTIVE,
+            p.CREATED_AT AS createdAt,
+            p.UPDATED_AT AS updatedAt,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM ORDERS o
+                WHERE o.STOCK_CODE = p.STOCK_CODE
+                  AND o.ORDER_TYPE = 'BUY'
+                  AND o.ORDER_STATUS IN ('ORDERING', 'REQUESTED', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+            ), 0) AS openBuyOrderCount,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM ORDERS o
+                WHERE o.STOCK_CODE = p.STOCK_CODE
+                  AND o.ORDER_TYPE = 'SELL'
+                  AND o.POSITION_ID = p.ID
+                  AND o.ORDER_STATUS IN ('ORDERING', 'REQUESTED', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+            ), 0) AS openSellOrderCount
+        FROM POSITIONS p
+        WHERE p.ACTIVE = 'Y'
+          AND p.STATUS != 'CLOSED'
+        ORDER BY
+            CASE p.STATUS WHEN 'BLACK' THEN 0 WHEN 'GRAY' THEN 1 ELSE 2 END,
+            p.STOCK_CODE ASC
+    </select>
+
+    <select id="selectAccountBalance" resultType="map">
+        SELECT
+            CASH_BALANCE AS cashBalance,
+            TOTAL_VALUATION_AMOUNT AS totalValuationAmount,
+            CURRENCY_CODE AS currencyCode,
+            SOURCE AS source,
+            UPDATED_AT AS updatedAt
+        FROM ACCOUNT_BALANCE
+        WHERE ID = 1
+    </select>
+
+    <select id="selectOrderSuccessSummary24h" resultType="map">
+        SELECT
+            COALESCE(SUM(CASE WHEN ORDER_TYPE = 'SELL' THEN 1 ELSE 0 END), 0) AS sellSuccessCount,
+            COALESCE(SUM(CASE WHEN ORDER_TYPE = 'BUY' THEN 1 ELSE 0 END), 0) AS buySuccessCount
+        FROM ORDERS
+        WHERE ORDER_STATUS = 'FILLED'
+          AND FILLED_AT IS NOT NULL
+          AND TRIM(FILLED_AT) != ''
+          AND julianday(FILLED_AT) >= julianday('now', '-24 hours')
+    </select>
+
+    <insert id="upsertAccountBalance">
+        INSERT INTO ACCOUNT_BALANCE (
+            ID,
+            CASH_BALANCE,
+            TOTAL_VALUATION_AMOUNT,
+            CURRENCY_CODE,
+            SOURCE,
+            UPDATED_AT
+        ) VALUES (
+            1,
+            #{cashBalance},
+            #{totalValuationAmount},
+            #{currencyCode},
+            #{source},
+            #{updatedAt}
+        )
+        ON CONFLICT(ID) DO UPDATE SET
+            CASH_BALANCE = excluded.CASH_BALANCE,
+            TOTAL_VALUATION_AMOUNT = excluded.TOTAL_VALUATION_AMOUNT,
+            CURRENCY_CODE = excluded.CURRENCY_CODE,
+            SOURCE = excluded.SOURCE,
+            UPDATED_AT = excluded.UPDATED_AT
+    </insert>
 
     <select id="selectActiveBlackPositions" resultType="map">
         SELECT
@@ -177,6 +328,9 @@
             RETURN_RATE,
             LAST_EVALUATED_AT,
             FLAT_STARTED_DATE,
+            FLAT_ACTIVE,
+            ACCOUNT_SYNC_SOURCE,
+            LIFECYCLE_KEY,
             ACTIVE,
             CREATED_AT,
             UPDATED_AT
@@ -201,30 +355,43 @@
             #{returnRate},
             #{lastEvaluatedAt},
             null,
+            #{flatActive},
+            #{accountSyncSource},
+            #{lifecycleKey},
             'Y',
             #{createdAt},
             #{updatedAt}
         )
     </insert>
 
-    <update id="updateSyncedPosition">
+    <update id="updatePositionLifecycleKey">
         UPDATE POSITIONS
-        SET STOCK_NAME = #{stockName},
-            PURCHASE_PRICE = #{purchasePrice},
-            PURCHASE_QUANTITY = #{purchaseQuantity},
+        SET LIFECYCLE_KEY = #{lifecycleKey},
+            UPDATED_AT = #{updatedAt}
+        WHERE ID = #{positionId}
+    </update>
+
+    <update id="updatePositionHoldingQuantity">
+        UPDATE POSITIONS
+        SET PURCHASE_QUANTITY = #{holdingQuantity},
             INVESTED_AMOUNT = #{investedAmount},
-            CURRENT_PRICE = #{currentPrice},
-            CURRENT_VALUATION_AMOUNT = #{currentValuationAmount},
-            PROFIT_RATE = #{profitRate},
-            LAST_EVALUATED_PRICE = #{lastEvaluatedPrice},
-            STATUS_REFERENCE_PRICE = COALESCE(STATUS_REFERENCE_PRICE, #{statusReferencePrice}),
-            AVERAGE_BUY_PRICE = #{averageBuyPrice},
-            REFERENCE_PRICE = COALESCE(REFERENCE_PRICE, #{referencePrice}),
-            HIGHEST_PRICE = MAX(CAST(COALESCE(HIGHEST_PRICE, #{highestPrice}) AS REAL), CAST(#{highestPrice} AS REAL)),
-            LOWEST_PRICE = MIN(CAST(COALESCE(LOWEST_PRICE, #{lowestPrice}) AS REAL), CAST(#{lowestPrice} AS REAL)),
             HOLDING_QUANTITY = #{holdingQuantity},
-            RETURN_RATE = #{returnRate},
-            LAST_EVALUATED_AT = #{lastEvaluatedAt},
+            CURRENT_VALUATION_AMOUNT = CASE
+                WHEN CURRENT_PRICE IS NULL THEN CURRENT_VALUATION_AMOUNT
+                ELSE CAST(CAST(CURRENT_PRICE AS REAL) * CAST(#{holdingQuantity} AS REAL) AS TEXT)
+            END,
+            RETURN_RATE = CASE
+                WHEN AVERAGE_BUY_PRICE IS NULL OR CAST(AVERAGE_BUY_PRICE AS REAL) &lt;= 0 OR CURRENT_PRICE IS NULL THEN RETURN_RATE
+                ELSE ((CAST(CURRENT_PRICE AS REAL) - CAST(AVERAGE_BUY_PRICE AS REAL)) / CAST(AVERAGE_BUY_PRICE AS REAL))
+            END,
+            UPDATED_AT = #{updatedAt}
+        WHERE ID = #{positionId}
+          AND ACTIVE = 'Y'
+    </update>
+
+    <update id="updatePositionBrokerOrderId">
+        UPDATE POSITIONS
+        SET BROKER_ORDER_ID = #{brokerOrderId},
             UPDATED_AT = #{updatedAt}
         WHERE ID = #{positionId}
     </update>
@@ -239,7 +406,6 @@
             STATUS_REFERENCE_PRICE = #{statusReferencePrice},
             GRAY_ENTERED_DATE = #{grayEnteredDate},
             GRAY_TRADING_DAYS = #{grayTradingDays},
-            AVERAGE_BUY_PRICE = #{averageBuyPrice},
             REFERENCE_PRICE = #{referencePrice},
             HIGHEST_PRICE = #{highestPrice},
             LOWEST_PRICE = #{lowestPrice},
@@ -247,6 +413,7 @@
             RETURN_RATE = #{returnRate},
             LAST_EVALUATED_AT = #{lastEvaluatedAt},
             FLAT_STARTED_DATE = #{flatStartedDate},
+            FLAT_ACTIVE = #{flatActive},
             UPDATED_AT = #{updatedAt}
         WHERE ID = #{positionId}
           AND ACTIVE = 'Y'
@@ -280,6 +447,19 @@
         LIMIT 1
     </select>
 
+    <select id="selectOrderByIdempotencyKey" resultType="map">
+        SELECT
+            ID AS id,
+            POSITION_ID AS positionId,
+            ORDER_STATUS AS orderStatus,
+            ORDER_SOURCE AS orderSource,
+            LIFECYCLE_KEY AS lifecycleKey
+        FROM ORDERS
+        WHERE IDEMPOTENCY_KEY = #{idempotencyKey}
+        ORDER BY ID DESC
+        LIMIT 1
+    </select>
+
     <select id="selectOpenBuyOrders" resultType="map">
         SELECT
             ID,
@@ -291,14 +471,31 @@
             BROKER_ORDER_ID AS brokerOrderId,
             BROKER_ORDER_ORGNO AS brokerOrderOrgNo,
             BROKER_STATUS AS brokerStatus,
+            POSITION_ID AS positionId,
             LAST_BROKER_STATUS_CHECKED_AT AS lastBrokerStatusCheckedAt,
             IDEMPOTENCY_KEY AS idempotencyKey,
             UPDATED_AT AS updatedAt
         FROM ORDERS
         WHERE ORDER_TYPE = 'BUY'
+          AND (POSITION_ID IS NULL OR POSITION_ID = 0)
           AND ORDER_STATUS IN ('DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED')
           AND (ORDER_STATUS = 'DRY_RUN' OR BROKER_STATUS IN ('OPEN', 'PARTIALLY_FILLED'))
         ORDER BY ID
+    </select>
+
+    <select id="selectUnlinkedAcceptedBuyOrderByStockCode" resultType="map">
+        SELECT
+            ID,
+            STOCK_CODE AS stockCode,
+            BROKER_ORDER_ID AS brokerOrderId,
+            ORDER_STATUS AS orderStatus
+        FROM ORDERS
+        WHERE ORDER_TYPE = 'BUY'
+          AND STOCK_CODE = #{stockCode}
+          AND POSITION_ID IS NULL
+          AND ORDER_STATUS IN ('ACCEPTED', 'PARTIALLY_FILLED', 'FILLED')
+        ORDER BY ID ASC
+        LIMIT 1
     </select>
 
     <select id="selectOpenSellOrders" resultType="map">
@@ -312,6 +509,7 @@
             BROKER_ORDER_ID AS brokerOrderId,
             BROKER_ORDER_ORGNO AS brokerOrderOrgNo,
             BROKER_STATUS AS brokerStatus,
+            POSITION_ID AS positionId,
             LAST_BROKER_STATUS_CHECKED_AT AS lastBrokerStatusCheckedAt,
             IDEMPOTENCY_KEY AS idempotencyKey,
             UPDATED_AT AS updatedAt
@@ -322,22 +520,52 @@
         ORDER BY ID
     </select>
 
+    <select id="selectLatestSellOrderByPositionId" resultType="map">
+        SELECT
+            ID,
+            POSITION_ID AS positionId,
+            STOCK_CODE AS stockCode,
+            ORDER_STATUS AS orderStatus,
+            BROKER_ORDER_ID AS brokerOrderId
+        FROM ORDERS
+        WHERE ORDER_TYPE = 'SELL'
+          AND POSITION_ID = #{positionId}
+        ORDER BY ID DESC
+        LIMIT 1
+    </select>
+
     <select id="selectOrdersForStatusSync" resultType="map">
         SELECT
             ID,
+            POSITION_ID AS positionId,
             STOCK_CODE AS stockCode,
             ORDER_TYPE AS orderType,
             ORDER_QUANTITY AS orderQuantity,
+            ORDER_PRICE AS orderPrice,
+            ORDER_AMOUNT AS orderAmount,
             ORDER_STATUS AS orderStatus,
             BROKER_ORDER_ID AS brokerOrderId,
             BROKER_ORDER_ORGNO AS brokerOrderOrgNo,
-            BROKER_STATUS AS brokerStatus
+            BROKER_STATUS AS brokerStatus,
+            CURRENT_PRICE AS currentPrice,
+            CURRENT_PRICE_AT AS currentPriceAt,
+            FILLED_QUANTITY AS filledQuantity,
+            FILLED_PRICE AS filledPrice
         FROM ORDERS
         WHERE ORDER_STATUS IN ('ACCEPTED', 'PARTIALLY_FILLED')
           AND BROKER_ORDER_ID IS NOT NULL
           AND TRIM(BROKER_ORDER_ID) != ''
         ORDER BY ID
     </select>
+
+    <update id="updateOrderPositionId">
+        UPDATE ORDERS
+        SET POSITION_ID = #{positionId},
+            LIFECYCLE_KEY = #{lifecycleKey},
+            UPDATED_AT = #{updatedAt}
+        WHERE ID = #{orderId}
+          AND (POSITION_ID IS NULL OR POSITION_ID = 0)
+    </update>
 
     <update id="updateOrderStatusById">
         UPDATE ORDERS
@@ -346,6 +574,22 @@
             UPDATED_AT = #{updatedAt}
         WHERE ID = #{orderId}
           AND ORDER_STATUS IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+    </update>
+
+    <update id="markOrderFilledByAccountSync">
+        UPDATE ORDERS
+        SET ORDER_STATUS = 'FILLED',
+            BROKER_STATUS = 'ACCOUNT_SYNC_CONFIRMED',
+            FILLED_QUANTITY = #{filledQuantity},
+            FILLED_PRICE = #{filledPrice},
+            REMAINING_QUANTITY = '0',
+            FILLED_AT = COALESCE(FILLED_AT, #{checkedAt}),
+            LAST_BROKER_STATUS_CHECKED_AT = #{checkedAt},
+            ERROR_MESSAGE = #{errorMessage},
+            UPDATED_AT = #{checkedAt}
+        WHERE ID = #{orderId}
+          AND ORDER_TYPE IN ('BUY', 'SELL')
+          AND ORDER_STATUS IN ('ORDERING', 'REQUESTED', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING', 'ACCOUNT_SYNC_FALLBACK')
     </update>
 
     <update id="updateOrderBrokerResultByIdempotencyKey">
@@ -364,6 +608,7 @@
         SET ORDER_STATUS = #{orderStatus},
             BROKER_STATUS = #{brokerStatus},
             FILLED_QUANTITY = COALESCE(#{filledQuantity}, FILLED_QUANTITY),
+            FILLED_PRICE = COALESCE(#{filledPrice}, FILLED_PRICE),
             REMAINING_QUANTITY = COALESCE(#{remainingQuantity}, REMAINING_QUANTITY),
             FILLED_AT = CASE
                 WHEN #{orderStatus} = 'FILLED' THEN COALESCE(FILLED_AT, #{checkedAt})
@@ -386,10 +631,19 @@
           AND ORDER_STATUS IN ('ACCEPTED', 'PARTIALLY_FILLED')
     </update>
 
-    <select id="countOpenSellOrderByStockCode" resultType="int">
+    <select id="countOpenSellOrderByPositionId" resultType="int">
+        SELECT COUNT(*)
+        FROM ORDERS
+        WHERE POSITION_ID = #{positionId}
+          AND ORDER_TYPE = 'SELL'
+          AND ORDER_STATUS IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
+    </select>
+
+    <select id="countOpenUnlinkedSellOrderByStockCode" resultType="int">
         SELECT COUNT(*)
         FROM ORDERS
         WHERE STOCK_CODE = #{stockCode}
+          AND POSITION_ID IS NULL
           AND ORDER_TYPE = 'SELL'
           AND ORDER_STATUS IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
     </select>
@@ -397,6 +651,7 @@
     <insert id="insertOrderRecordDetailed">
         INSERT INTO ORDERS (
             BROKER_ORDER_ID,
+            POSITION_ID,
             STOCK_CODE,
             ORDER_TYPE,
             ORDER_QUANTITY,
@@ -415,10 +670,24 @@
             EXIT_REASON,
             DRY_RUN,
             CURRENT_PRICE,
-            CURRENT_PRICE_AT
-            ,BROKER_ORDER_ORGNO
+            CURRENT_PRICE_AT,
+            CANDIDATE_RANK,
+            TRADING_VALUE_SCORE,
+            VOLUME_SCORE,
+            VOLATILITY_SCORE,
+            TOTAL_SCORE,
+            POSITION_STATUS,
+            AVERAGE_BUY_PRICE,
+            HIGHEST_PRICE,
+            LOWEST_PRICE,
+            RETURN_RATE,
+            GRAY_TRADING_DAYS,
+            BROKER_ORDER_ORGNO,
+            LIFECYCLE_KEY,
+            ORDER_SOURCE
         ) VALUES (
             #{brokerOrderId},
+            #{positionId},
             #{stockCode},
             #{orderType},
             #{orderQuantity},
@@ -437,8 +706,21 @@
             #{exitReason},
             #{dryRun},
             #{currentPrice},
-            #{currentPriceAt}
-            ,#{brokerOrderOrgNo}
+            #{currentPriceAt},
+            #{candidateRank},
+            #{tradingValueScore},
+            #{volumeScore},
+            #{volatilityScore},
+            #{totalScore},
+            #{positionStatus},
+            #{averageBuyPrice},
+            #{highestPrice},
+            #{lowestPrice},
+            #{returnRate},
+            #{grayTradingDays},
+            #{brokerOrderOrgNo},
+            #{lifecycleKey},
+            #{orderSource}
         )
     </insert>
 
@@ -490,7 +772,8 @@
             ORDER_ID,
             EXECUTION_ID,
             IDEMPOTENCY_KEY,
-            OCCURRED_AT
+            OCCURRED_AT,
+            LIFECYCLE_KEY
         ) VALUES (
             #{lifecycleId},
             #{eventType},
@@ -508,7 +791,8 @@
             #{orderId},
             #{executionId},
             #{idempotencyKey},
-            #{occurredAt}
+            #{occurredAt},
+            #{lifecycleKey}
         )
     </insert>
 
@@ -516,25 +800,26 @@
 
 
     <sql id="domesticMarketFilter">
-        (#{marketCode} = 'ALL' OR MARKET_CODE = #{marketCode})
+        TYPE = 'DOMESTIC' AND (#{marketCode} = 'ALL' OR MARKET_CODE = #{marketCode})
     </sql>
 
     <select id="domesticCountMasterRows" resultType="int">
         SELECT COUNT(*)
-        FROM DOMESTIC_STOCK_MASTER
+        FROM STOCK_MASTER
         WHERE <include refid="domesticMarketFilter"/>
     </select>
 
     <select id="domesticCountBuyableCandidates" resultType="int">
         SELECT COUNT(*)
-        FROM DOMESTIC_STOCK_MASTER
+        FROM STOCK_MASTER
         WHERE <include refid="domesticMarketFilter"/>
           AND ACTIVE = 'Y'
           AND TRADABLE = 'Y'
     </select>
 
     <insert id="domesticUpsertMaster" parameterType="map">
-        INSERT INTO DOMESTIC_STOCK_MASTER (
+        INSERT INTO STOCK_MASTER (
+            TYPE,
             SYMBOL,
             STOCK_NAME,
             MARKET_CODE,
@@ -544,6 +829,9 @@
             SPAC,
             TRADABLE,
             ACTIVE,
+            EXCHANGE_CODE,
+            PRICE_EXCHANGE_CODE,
+            CURRENCY_CODE,
             LAST_PRICE,
             MARKET_CAP,
             TRADING_VOLUME,
@@ -552,6 +840,7 @@
             UPDATED_AT,
             LAST_SYNCED_AT
         ) VALUES (
+            'DOMESTIC',
             #{symbol},
             #{stockName},
             #{marketCode},
@@ -561,6 +850,9 @@
             CASE WHEN #{spac} THEN 'Y' ELSE 'N' END,
             CASE WHEN #{tradable} THEN 'Y' ELSE 'N' END,
             CASE WHEN #{active} THEN 'Y' ELSE 'N' END,
+            '',
+            '',
+            '',
             #{lastPrice},
             #{marketCap},
             #{tradingVolume},
@@ -569,7 +861,7 @@
             #{updatedAt},
             #{lastSyncedAt}
         )
-        ON CONFLICT(SYMBOL, MARKET_CODE) DO UPDATE SET
+        ON CONFLICT(TYPE, SYMBOL, MARKET_CODE, EXCHANGE_CODE) DO UPDATE SET
             STOCK_NAME = excluded.STOCK_NAME,
             STANDARD_CODE = excluded.STANDARD_CODE,
             SECURITY_GROUP_CODE = excluded.SECURITY_GROUP_CODE,
@@ -634,7 +926,7 @@
                   AND o.ORDER_TYPE = 'BUY'
                   AND o.ORDER_STATUS IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
             ), 0) AS TEXT) AS pendingInvestmentAmount
-        FROM DOMESTIC_STOCK_MASTER m
+        FROM STOCK_MASTER m
         WHERE <include refid="domesticMarketFilter"/>
           AND m.ACTIVE = 'Y'
           AND m.TRADABLE = 'Y'
@@ -643,9 +935,11 @@
     </select>
 
     <insert id="domesticUpsertDashboardRow" parameterType="map">
-        INSERT INTO DOMESTIC_STOCK_DASHBOARD (
+        INSERT INTO STOCK_DASHBOARD (
+            TYPE,
             SYMBOL,
             MARKET_CODE,
+            EXCHANGE_CODE,
             RANK_NO,
             STOCK_NAME,
             CANDIDATE_SCORE,
@@ -668,8 +962,10 @@
             EVALUATED_AT,
             UPDATED_AT
         ) VALUES (
+            'DOMESTIC',
             #{symbol},
             #{marketCode},
+            '',
             #{rankNo},
             #{stockName},
             #{candidateScore},
@@ -692,7 +988,7 @@
             #{evaluatedAt},
             #{updatedAt}
         )
-        ON CONFLICT(SYMBOL, MARKET_CODE) DO UPDATE SET
+        ON CONFLICT(TYPE, SYMBOL, MARKET_CODE, EXCHANGE_CODE) DO UPDATE SET
             RANK_NO = excluded.RANK_NO,
             STOCK_NAME = excluded.STOCK_NAME,
             CANDIDATE_SCORE = excluded.CANDIDATE_SCORE,
@@ -717,19 +1013,20 @@
     </insert>
 
     <delete id="domesticDeleteStaleDashboardRows">
-        DELETE FROM DOMESTIC_STOCK_DASHBOARD
-        WHERE (#{marketCode} = 'ALL' OR MARKET_CODE = #{marketCode})
+        DELETE FROM STOCK_DASHBOARD
+        WHERE TYPE = 'DOMESTIC'
+          AND (#{marketCode} = 'ALL' OR MARKET_CODE = #{marketCode})
           AND EVALUATED_AT != #{evaluatedAt}
           AND NOT EXISTS (
               SELECT 1
               FROM POSITIONS p
-              WHERE p.STOCK_CODE = DOMESTIC_STOCK_DASHBOARD.SYMBOL
+              WHERE p.STOCK_CODE = STOCK_DASHBOARD.SYMBOL
                 AND p.ACTIVE = 'Y'
           )
           AND NOT EXISTS (
               SELECT 1
               FROM ORDERS o
-              WHERE o.STOCK_CODE = DOMESTIC_STOCK_DASHBOARD.SYMBOL
+              WHERE o.STOCK_CODE = STOCK_DASHBOARD.SYMBOL
                 AND o.ORDER_STATUS IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
           )
     </delete>
@@ -759,38 +1056,42 @@
             RETRY_AFTER AS retryAfter,
             EVALUATED_AT AS evaluatedAt,
             UPDATED_AT AS updatedAt
-        FROM DOMESTIC_STOCK_DASHBOARD
-        WHERE (#{marketCode} = 'ALL' OR MARKET_CODE = #{marketCode})
+        FROM STOCK_DASHBOARD
+        WHERE TYPE = 'DOMESTIC'
+          AND (#{marketCode} = 'ALL' OR MARKET_CODE = #{marketCode})
         ORDER BY RANK_NO ASC, SYMBOL ASC
     </select>
 
     <update id="domesticTouchCandidateSelected">
-        UPDATE DOMESTIC_STOCK_MASTER
+        UPDATE STOCK_MASTER
         SET LAST_SELECTED_AT = #{selectedAt},
             UPDATED_AT = #{selectedAt}
         WHERE ID = #{id}
+          AND TYPE = 'DOMESTIC'
     </update>
 
     <update id="domesticUpdateCandidateBuyAttempt">
-        UPDATE DOMESTIC_STOCK_MASTER
+        UPDATE STOCK_MASTER
         SET LAST_BUY_ATTEMPT_AT = #{attemptedAt},
             UPDATED_AT = #{attemptedAt}
         WHERE SYMBOL = #{symbol}
           AND MARKET_CODE = #{marketCode}
+          AND TYPE = 'DOMESTIC'
     </update>
 
     <update id="domesticMarkCandidateFailure">
-        UPDATE DOMESTIC_STOCK_MASTER
+        UPDATE STOCK_MASTER
         SET CONSECUTIVE_FAILURES = CONSECUTIVE_FAILURES + 1,
             RETRY_AFTER = #{retryAfter},
             EXCLUDED_REASON = #{reason},
             UPDATED_AT = #{updatedAt}
         WHERE SYMBOL = #{symbol}
           AND MARKET_CODE = #{marketCode}
+          AND TYPE = 'DOMESTIC'
     </update>
 
     <update id="domesticMarkCandidateSuccess">
-        UPDATE DOMESTIC_STOCK_MASTER
+        UPDATE STOCK_MASTER
         SET LAST_BUY_SUCCESS_AT = #{successAt},
             CONSECUTIVE_FAILURES = 0,
             RETRY_AFTER = NULL,
@@ -798,6 +1099,7 @@
             UPDATED_AT = #{successAt}
         WHERE SYMBOL = #{symbol}
           AND MARKET_CODE = #{marketCode}
+          AND TYPE = 'DOMESTIC'
     </update>
 
     <select id="domesticCountActiveHeldAndOpenBuyQuantity" resultType="int">
@@ -811,15 +1113,17 @@
 
     <select id="overseasCountMasterRows" resultType="int">
         SELECT COUNT(*)
-        FROM OVERSEAS_STOCK_MASTER
-        WHERE EXCHANGE_CODE = #{exchangeCode}
+        FROM STOCK_MASTER
+        WHERE TYPE = 'OVERSEAS'
+          AND EXCHANGE_CODE = #{exchangeCode}
           AND CURRENCY_CODE = #{currencyCode}
     </select>
 
     <select id="overseasCountBuyableCandidates" resultType="int">
         SELECT COUNT(*)
-        FROM OVERSEAS_STOCK_MASTER
-        WHERE EXCHANGE_CODE = #{exchangeCode}
+        FROM STOCK_MASTER
+        WHERE TYPE = 'OVERSEAS'
+          AND EXCHANGE_CODE = #{exchangeCode}
           AND PRICE_EXCHANGE_CODE = #{priceExchangeCode}
           AND CURRENCY_CODE = #{currencyCode}
           AND ACTIVE = 'Y'
@@ -828,9 +1132,11 @@
     </select>
 
     <insert id="overseasUpsertMaster" parameterType="map">
-        INSERT INTO OVERSEAS_STOCK_MASTER (
+        INSERT INTO STOCK_MASTER (
+            TYPE,
             SYMBOL,
             STOCK_NAME,
+            MARKET_CODE,
             EXCHANGE_CODE,
             PRICE_EXCHANGE_CODE,
             CURRENCY_CODE,
@@ -846,8 +1152,10 @@
             UPDATED_AT,
             LAST_SYNCED_AT
         ) VALUES (
+            'OVERSEAS',
             #{symbol},
             #{stockName},
+            '',
             #{exchangeCode},
             #{priceExchangeCode},
             #{currencyCode},
@@ -863,7 +1171,7 @@
             #{updatedAt},
             #{lastSyncedAt}
         )
-        ON CONFLICT(SYMBOL, EXCHANGE_CODE) DO UPDATE SET
+        ON CONFLICT(TYPE, SYMBOL, MARKET_CODE, EXCHANGE_CODE) DO UPDATE SET
             STOCK_NAME = excluded.STOCK_NAME,
             PRICE_EXCHANGE_CODE = excluded.PRICE_EXCHANGE_CODE,
             CURRENCY_CODE = excluded.CURRENCY_CODE,
@@ -934,8 +1242,9 @@
                   AND o.ORDER_TYPE = 'BUY'
                   AND o.ORDER_STATUS IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
             ), 0) AS TEXT) AS pendingInvestmentAmount
-        FROM OVERSEAS_STOCK_MASTER m
-        WHERE m.EXCHANGE_CODE = #{exchangeCode}
+        FROM STOCK_MASTER m
+        WHERE m.TYPE = 'OVERSEAS'
+          AND m.EXCHANGE_CODE = #{exchangeCode}
           AND m.PRICE_EXCHANGE_CODE = #{priceExchangeCode}
           AND m.CURRENCY_CODE = #{currencyCode}
           AND m.ACTIVE = 'Y'
@@ -945,8 +1254,10 @@
     </select>
 
     <insert id="overseasUpsertDashboardRow" parameterType="map">
-        INSERT INTO OVERSEAS_STOCK_DASHBOARD (
+        INSERT INTO STOCK_DASHBOARD (
+            TYPE,
             SYMBOL,
+            MARKET_CODE,
             EXCHANGE_CODE,
             RANK_NO,
             STOCK_NAME,
@@ -970,7 +1281,9 @@
             EVALUATED_AT,
             UPDATED_AT
         ) VALUES (
+            'OVERSEAS',
             #{symbol},
+            '',
             #{exchangeCode},
             #{rankNo},
             #{stockName},
@@ -994,7 +1307,7 @@
             #{evaluatedAt},
             #{updatedAt}
         )
-        ON CONFLICT(SYMBOL, EXCHANGE_CODE) DO UPDATE SET
+        ON CONFLICT(TYPE, SYMBOL, MARKET_CODE, EXCHANGE_CODE) DO UPDATE SET
             RANK_NO = excluded.RANK_NO,
             STOCK_NAME = excluded.STOCK_NAME,
             CANDIDATE_SCORE = excluded.CANDIDATE_SCORE,
@@ -1019,19 +1332,20 @@
     </insert>
 
     <delete id="overseasDeleteStaleDashboardRows">
-        DELETE FROM OVERSEAS_STOCK_DASHBOARD
-        WHERE EXCHANGE_CODE = #{exchangeCode}
+        DELETE FROM STOCK_DASHBOARD
+        WHERE TYPE = 'OVERSEAS'
+          AND EXCHANGE_CODE = #{exchangeCode}
           AND EVALUATED_AT != #{evaluatedAt}
           AND NOT EXISTS (
               SELECT 1
               FROM POSITIONS p
-              WHERE p.STOCK_CODE = OVERSEAS_STOCK_DASHBOARD.SYMBOL
+              WHERE p.STOCK_CODE = STOCK_DASHBOARD.SYMBOL
                 AND p.ACTIVE = 'Y'
           )
           AND NOT EXISTS (
               SELECT 1
               FROM ORDERS o
-              WHERE o.STOCK_CODE = OVERSEAS_STOCK_DASHBOARD.SYMBOL
+              WHERE o.STOCK_CODE = STOCK_DASHBOARD.SYMBOL
                 AND o.ORDER_STATUS IN ('ORDERING', 'REQUESTED', 'DRY_RUN', 'ACCEPTED', 'PARTIALLY_FILLED', 'RETRY_PENDING')
           )
     </delete>
@@ -1061,38 +1375,42 @@
             RETRY_AFTER AS retryAfter,
             EVALUATED_AT AS evaluatedAt,
             UPDATED_AT AS updatedAt
-        FROM OVERSEAS_STOCK_DASHBOARD
-        WHERE EXCHANGE_CODE = #{exchangeCode}
+        FROM STOCK_DASHBOARD
+        WHERE TYPE = 'OVERSEAS'
+          AND EXCHANGE_CODE = #{exchangeCode}
         ORDER BY RANK_NO ASC, SYMBOL ASC
     </select>
 
     <update id="overseasTouchCandidateSelected">
-        UPDATE OVERSEAS_STOCK_MASTER
+        UPDATE STOCK_MASTER
         SET LAST_SELECTED_AT = #{selectedAt},
             UPDATED_AT = #{selectedAt}
         WHERE ID = #{id}
+          AND TYPE = 'OVERSEAS'
     </update>
 
     <update id="overseasUpdateCandidateBuyAttempt">
-        UPDATE OVERSEAS_STOCK_MASTER
+        UPDATE STOCK_MASTER
         SET LAST_BUY_ATTEMPT_AT = #{attemptedAt},
             UPDATED_AT = #{attemptedAt}
         WHERE SYMBOL = #{symbol}
           AND EXCHANGE_CODE = #{exchangeCode}
+          AND TYPE = 'OVERSEAS'
     </update>
 
     <update id="overseasMarkCandidateFailure">
-        UPDATE OVERSEAS_STOCK_MASTER
+        UPDATE STOCK_MASTER
         SET CONSECUTIVE_FAILURES = CONSECUTIVE_FAILURES + 1,
             RETRY_AFTER = #{retryAfter},
             EXCLUDED_REASON = #{reason},
             UPDATED_AT = #{updatedAt}
         WHERE SYMBOL = #{symbol}
           AND EXCHANGE_CODE = #{exchangeCode}
+          AND TYPE = 'OVERSEAS'
     </update>
 
     <update id="overseasMarkCandidateSuccess">
-        UPDATE OVERSEAS_STOCK_MASTER
+        UPDATE STOCK_MASTER
         SET LAST_BUY_SUCCESS_AT = #{successAt},
             CONSECUTIVE_FAILURES = 0,
             RETRY_AFTER = NULL,
@@ -1100,19 +1418,21 @@
             UPDATED_AT = #{successAt}
         WHERE SYMBOL = #{symbol}
           AND EXCHANGE_CODE = #{exchangeCode}
+          AND TYPE = 'OVERSEAS'
     </update>
 
     <update id="overseasMarkFractionalVerificationAttempt">
-        UPDATE OVERSEAS_STOCK_MASTER
+        UPDATE STOCK_MASTER
         SET LAST_VERIFICATION_ATTEMPT_AT = #{attemptedAt},
             VERIFICATION_ATTEMPT_COUNT = COALESCE(VERIFICATION_ATTEMPT_COUNT, 0) + 1,
             UPDATED_AT = #{attemptedAt}
         WHERE SYMBOL = #{symbol}
           AND EXCHANGE_CODE = #{exchangeCode}
+          AND TYPE = 'OVERSEAS'
     </update>
 
     <update id="overseasMarkFractionalVerificationYes">
-        UPDATE OVERSEAS_STOCK_MASTER
+        UPDATE STOCK_MASTER
         SET FRACTIONAL_TRADABLE = 'YES',
             FRACTIONAL_VERIFIED_AT = #{verifiedAt},
             FRACTIONAL_VERIFICATION_SOURCE = #{source},
@@ -1123,10 +1443,11 @@
             UPDATED_AT = #{verifiedAt}
         WHERE SYMBOL = #{symbol}
           AND EXCHANGE_CODE = #{exchangeCode}
+          AND TYPE = 'OVERSEAS'
     </update>
 
     <update id="overseasKeepFractionalVerificationUnknown">
-        UPDATE OVERSEAS_STOCK_MASTER
+        UPDATE STOCK_MASTER
         SET FRACTIONAL_TRADABLE = 'UNKNOWN',
             LAST_KIS_RESPONSE_CODE = #{responseCode},
             LAST_KIS_RESPONSE_MESSAGE = #{responseMessage},
@@ -1135,6 +1456,7 @@
             UPDATED_AT = #{updatedAt}
         WHERE SYMBOL = #{symbol}
           AND EXCHANGE_CODE = #{exchangeCode}
+          AND TYPE = 'OVERSEAS'
           AND FRACTIONAL_TRADABLE = 'UNKNOWN'
     </update>
 

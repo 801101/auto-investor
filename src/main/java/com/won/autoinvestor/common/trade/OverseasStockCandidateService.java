@@ -52,7 +52,7 @@ public class OverseasStockCandidateService {
             return List.of();
         }
 
-        int usedSlots = mapper.overseasCountActiveHeldAndOpenBuyQuantity();
+        int usedSlots = mapper.countActivePositions();
         int remainingSlots = remainingSlots(usedSlots);
         if (remainingSlots <= 0) {
             mapper.insertAuditLog(MapUtils.map("eventType", "BUY_SKIPPED", "stockCode", null, "details", "MAX_HOLDING_SLOTS_REACHED", "createdAt", now));
@@ -79,7 +79,7 @@ public class OverseasStockCandidateService {
 
     @Transactional
     public Map<String, Object> refreshDashboard() {
-        int usedSlots = mapper.overseasCountActiveHeldAndOpenBuyQuantity();
+        int usedSlots = mapper.countActivePositions();
         return refreshDashboard(now(), usedSlots, remainingSlots(usedSlots));
     }
 
@@ -117,7 +117,7 @@ public class OverseasStockCandidateService {
                 activeCount++;
                 Map<String, Object> row = row(scoredCandidate);
                 if (targets.size() < activeLimit && selectedSymbols.add(MapUtils.string(row, "symbol"))) {
-                    targets.add(toCandidate(scoredCandidate));
+                    targets.add(toCandidate(scoredCandidate, rank));
                 }
             } else if (buyable && bufferCount < bufferLimit) {
                 zone = "BUFFER";
@@ -202,7 +202,7 @@ public class OverseasStockCandidateService {
 
     private Map<String, Object> score(Map<String, Object> row, String now) {
         int maxHoldingsPerStock = investmentProperties.getMaxHoldingsPerStock();
-        int currentDuplicates = MapUtils.integer(row, "completedBuyCount") + MapUtils.integer(row, "pendingBuyCount") + MapUtils.integer(row, "reservedBuyCount");
+        int currentDuplicates = MapUtils.integer(row, "completedBuyCount");
         int remainingHoldingsPerStock = maxHoldingsPerStock == 0 ? Integer.MAX_VALUE : Math.max(maxHoldingsPerStock - currentDuplicates, 0);
         String exclusion = exclusionReason(row, now, remainingHoldingsPerStock);
 
@@ -278,8 +278,7 @@ public class OverseasStockCandidateService {
     }
 
     private Comparator<Map<String, Object>> candidateComparator() {
-        return Comparator.<Map<String, Object>, Integer>comparing(candidate -> routeAcceptedPriority(MapUtils.string(row(candidate), "lastKisResponseCode")))
-                .thenComparing(candidate -> MapUtils.decimal(candidate, "candidateScore"), Comparator.reverseOrder())
+        return Comparator.<Map<String, Object>, BigDecimal>comparing(candidate -> MapUtils.decimal(candidate, "candidateScore"), Comparator.reverseOrder())
                 .thenComparing(candidate -> securityTypePriority(MapUtils.string(row(candidate), "securityType")))
                 .thenComparing(candidate -> MapUtils.integer(candidate, "remainingDuplicateCount"), Comparator.reverseOrder())
                 .thenComparing(candidate -> nullToOldest(MapUtils.string(row(candidate), "lastBuySuccessAt")))
@@ -293,10 +292,6 @@ public class OverseasStockCandidateService {
 
     private int securityTypePriority(String securityType) {
         return "2".equals(securityType) ? 0 : 1;
-    }
-
-    private int routeAcceptedPriority(String lastKisResponseCode) {
-        return "40600000".equals(lastKisResponseCode) ? 0 : 1;
     }
 
     private String candidateFailureReason(String reason) {
@@ -369,7 +364,7 @@ public class OverseasStockCandidateService {
         return (Map<String, Object>) MapUtils.value(scoredCandidate, "row");
     }
 
-    private Map<String, Object> toCandidate(Map<String, Object> scoredCandidate) {
+    private Map<String, Object> toCandidate(Map<String, Object> scoredCandidate, int candidateRank) {
         Map<String, Object> row = row(scoredCandidate);
         return MapUtils.map(
                 "id", MapUtils.longValue(row, "id"),
@@ -379,6 +374,11 @@ public class OverseasStockCandidateService {
                 "priceExchangeCode", MapUtils.string(row, "priceExchangeCode"),
                 "currencyCode", MapUtils.string(row, "currencyCode"),
                 "fractionalTradable", MapUtils.string(row, "fractionalTradable"),
+                "candidateRank", candidateRank,
+                "tradingValueScore", MapUtils.value(row, "tradingValueScore"),
+                "volumeScore", MapUtils.value(row, "volumeScore"),
+                "volatilityScore", MapUtils.value(row, "volatilityScore"),
+                "totalScore", MapUtils.decimal(scoredCandidate, "candidateScore"),
                 "overseas", true,
                 "validationOrder", false
         );

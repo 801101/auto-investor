@@ -6,10 +6,9 @@ spring:
         # 애플리케이션 이름입니다.
         name: auto-investor
     datasource:
-        # SQLite DB 파일 위치입니다.
-        url: ${AUTO_INVESTOR_DB_URL:jdbc:sqlite:./src/main/resources/auto-investor.db}
-        # SQLite JDBC 드라이버입니다.
-        driver-class-name: org.sqlite.JDBC
+        # 비워 두면 시작 프로필에 따라 경로를 자동 선택합니다.
+        # 직접 지정하면 이 값이 자동 경로보다 우선합니다.
+        url: ${AUTO_INVESTOR_DB_URL:}
 
 mybatis:
     # MyBatis XML Mapper 위치입니다.
@@ -65,10 +64,10 @@ investment:
             # BLACK 전환 손절률입니다.
             rate: ${INVESTMENT_STOP_LOSS_RATE:-0.10}
         white:
-            # 보합이 이 영업일 이상 유지되면 GRAY로 전환합니다. 0이면 즉시입니다.
+            # 미변동 상태가 이 영업일을 초과하면 GRAY로 전환합니다. 0이면 즉시입니다.
             flat-grace-trading-days: ${INVESTMENT_WHITE_FLAT_GRACE_TRADING_DAYS:3}
         gray:
-            # GRAY가 이 영업일 이상 유지되면 BLACK으로 전환합니다. 0이면 즉시입니다.
+            # GRAY 진입 후 이 영업일을 초과하면 BLACK으로 전환합니다. 0이면 즉시입니다.
             grace-trading-days: ${INVESTMENT_GRAY_GRACE_TRADING_DAYS:3}
 
 kis:

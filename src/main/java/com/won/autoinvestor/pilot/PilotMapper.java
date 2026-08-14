@@ -20,17 +20,31 @@ public interface PilotMapper {
 
     int countActiveHeldAndOpenBuySlots();
 
-    Long selectActivePositionIdByStockCode(Map<String, Object> parameter);
+    List<Map<String, Object>> selectActivePositionsByStockCode(Map<String, Object> parameter);
 
-    Map<String, Object> selectActivePositionByStockCode(Map<String, Object> parameter);
+    Map<String, Object> selectLatestActivePositionByStockCode(Map<String, Object> parameter);
+
+    Map<String, Object> selectPositionById(Map<String, Object> parameter);
 
     List<Map<String, Object>> selectActivePositions();
+
+    List<Map<String, Object>> selectDashboardPositions();
+
+    Map<String, Object> selectAccountBalance();
+
+    Map<String, Object> selectOrderSuccessSummary24h();
+
+    void upsertAccountBalance(Map<String, Object> parameter);
 
     List<Map<String, Object>> selectActiveBlackPositions();
 
     void insertSyncedPosition(Map<String, Object> parameter);
 
-    void updateSyncedPosition(Map<String, Object> parameter);
+    void updatePositionLifecycleKey(Map<String, Object> parameter);
+
+    void updatePositionHoldingQuantity(Map<String, Object> parameter);
+
+    void updatePositionBrokerOrderId(Map<String, Object> parameter);
 
     void updatePositionAfterEvaluation(Map<String, Object> parameter);
 
@@ -40,13 +54,21 @@ public interface PilotMapper {
 
     String selectOrderStatusByIdempotencyKey(Map<String, Object> parameter);
 
+    Map<String, Object> selectOrderByIdempotencyKey(Map<String, Object> parameter);
+
     List<Map<String, Object>> selectOpenBuyOrders();
 
+    Map<String, Object> selectUnlinkedAcceptedBuyOrderByStockCode(Map<String, Object> parameter);
+
     List<Map<String, Object>> selectOpenSellOrders();
+
+    Map<String, Object> selectLatestSellOrderByPositionId(Map<String, Object> parameter);
 
     List<Map<String, Object>> selectOrdersForStatusSync();
 
     void updateOrderStatusById(Map<String, Object> parameter);
+
+    void markOrderFilledByAccountSync(Map<String, Object> parameter);
 
     void updateOrderBrokerResultByIdempotencyKey(Map<String, Object> parameter);
 
@@ -54,9 +76,13 @@ public interface PilotMapper {
 
     void updateOrderBrokerStatusById(Map<String, Object> parameter);
 
-    int countOpenSellOrderByStockCode(Map<String, Object> parameter);
+    int countOpenSellOrderByPositionId(Map<String, Object> parameter);
+
+    int countOpenUnlinkedSellOrderByStockCode(Map<String, Object> parameter);
 
     void insertOrderRecordDetailed(Map<String, Object> parameter);
+
+    void updateOrderPositionId(Map<String, Object> parameter);
 
     void insertSchedulerExecution(Map<String, Object> parameter);
 

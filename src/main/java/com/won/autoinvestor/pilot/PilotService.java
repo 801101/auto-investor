@@ -35,6 +35,8 @@ import java.util.UUID;
 @Service
 public class PilotService {
 
+    private static final int MAX_BUY_ATTEMPTS_PER_CYCLE = 20;
+
     private static final Logger logger = LoggerFactory.getLogger(PilotService.class);
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
     private static final String SCHEDULER_TYPE = "TRADING_CYCLE";
@@ -170,13 +172,35 @@ public class PilotService {
         return Map.of("activePositions", tradingMapper.countActivePositions());
     }
 
+    public Map<String, Object> getPositionDetails() {
+        List<Map<String, Object>> positions = tradingMapper.selectDashboardPositions();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("positions", positions);
+        response.put("maxHoldings", investmentProperties.getMaxHoldings());
+        response.put("maxHoldingsPerStock", investmentProperties.getMaxHoldingsPerStock());
+        return response;
+    }
+
     public Map<String, Object> getAccount() {
         Map<String, Object> balance = brokerClient.getAccountBalance();
+        persistAccountBalance(balance);
         return Map.of(
                 "cashBalance", MapUtils.decimal(balance, "cashBalance"),
                 "totalValuationAmount", MapUtils.decimal(balance, "totalValuationAmount"),
                 "holdings", brokerClient.getHoldings()
         );
+    }
+
+    public Map<String, Object> getAccountBalanceSnapshot() {
+        Map<String, Object> balance = tradingMapper.selectAccountBalance();
+        if (balance == null || balance.isEmpty()) {
+            return Map.of("available", false);
+        }
+        return balance;
+    }
+
+    public Map<String, Object> getOrderSuccessSummary24h() {
+        return tradingMapper.selectOrderSuccessSummary24h();
     }
 
     public Map<String, Object> getOverseasDashboard() {
@@ -202,10 +226,11 @@ public class PilotService {
                 logger.warn(message);
                 return;
             }
-            brokerClient.getAccountBalance();
+            Map<String, Object> balance = brokerClient.getAccountBalance();
+            persistAccountBalance(balance);
             List<Map<String, Object>> holdings = brokerClient.getHoldings();
-            synchronizeOpenOrders();
-            reconcileAccountHoldings(holdings);
+            Map<String, Object> orderSync = synchronizeOpenOrders();
+            reconcileAccountHoldings(holdings, orderSync);
             accountSyncStateService.recordSuccess();
             insertAuditLog("ACCOUNT_SYNC_COMPLETED", null, "startup account synchronization completed");
             logger.info("startup account synchronization completed");
@@ -227,10 +252,11 @@ public class PilotService {
         }
 
         try {
-            brokerClient.getAccountBalance();
+            Map<String, Object> balance = brokerClient.getAccountBalance();
+            persistAccountBalance(balance);
             List<Map<String, Object>> holdings = brokerClient.getHoldings();
-            synchronizeOpenOrders();
-            reconcileAccountHoldings(holdings);
+            Map<String, Object> orderSync = synchronizeOpenOrders();
+            reconcileAccountHoldings(holdings, orderSync);
             accountSyncStateService.recordSuccess();
             insertAuditLog("ACCOUNT_SYNC", null, "account and holdings synchronized");
             logger.debug("account synchronization completed");
@@ -258,7 +284,17 @@ public class PilotService {
         return message != null && (message.contains("EGW00133") || message.contains("EGW00201"));
     }
 
-    private void reconcileAccountHoldings(List<Map<String, Object>> holdings) {
+    private void persistAccountBalance(Map<String, Object> balance) {
+        tradingMapper.upsertAccountBalance(MapUtils.map(
+                "cashBalance", MapUtils.decimal(balance, "cashBalance"),
+                "totalValuationAmount", MapUtils.decimal(balance, "totalValuationAmount"),
+                "currencyCode", isOverseasMarket() ? investmentProperties.getOverseasCurrencyCode() : "KRW",
+                "source", "KIS_ACCOUNT_SYNC",
+                "updatedAt", OffsetDateTime.now().toString()
+        ));
+    }
+
+    private void reconcileAccountHoldings(List<Map<String, Object>> holdings, Map<String, Object> orderSync) {
         Set<String> accountHoldingCodes = new HashSet<>();
         String syncedAt = now();
         if (holdings != null) {
@@ -269,7 +305,7 @@ public class PilotService {
                     continue;
                 }
                 accountHoldingCodes.add(stockCode);
-                reconcileAccountHolding(holding, syncedAt);
+                reconcileAccountHolding(holding, syncedAt, orderSync);
             }
         }
 
@@ -278,14 +314,19 @@ public class PilotService {
             if (stockCode == null || accountHoldingCodes.contains(stockCode)) {
                 continue;
             }
-            closePositionMissingFromAccount(position, syncedAt);
+            closePositionMissingFromAccount(position, syncedAt, orderSync);
         }
     }
 
-    private void synchronizeOpenOrders() {
+    private Map<String, Object> synchronizeOpenOrders() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        Set<String> pendingSellBrokerOrderIds = new HashSet<>();
+        result.put("successful", false);
+        result.put("pendingSellBrokerOrderIds", pendingSellBrokerOrderIds);
         List<Map<String, Object>> localOrders = tradingMapper.selectOrdersForStatusSync();
         if (localOrders.isEmpty()) {
-            return;
+            result.put("successful", true);
+            return result;
         }
 
         List<Map<String, Object>> brokerOrders;
@@ -294,11 +335,22 @@ public class PilotService {
         } catch (UnsupportedOperationException e) {
             insertAuditLog("ORDER_STATUS_SYNC_UNAVAILABLE", null, e.getMessage());
             logger.warn("KIS order status inquiry is unavailable; local order states are retained");
-            return;
+            return result;
         } catch (RuntimeException e) {
             insertAuditLog("ORDER_STATUS_SYNC_FAILED", null, e.getMessage());
             logger.warn("KIS order status inquiry failed; local order states are retained. message={}", e.getMessage());
-            return;
+            return result;
+        }
+
+        result.put("successful", true);
+        for (Map<String, Object> brokerOrder : brokerOrders) {
+            if ("SELL".equalsIgnoreCase(MapUtils.string(brokerOrder, "orderType"))
+                    && isPendingBrokerOrder(MapUtils.string(brokerOrder, "brokerStatus"))) {
+                String brokerOrderId = MapUtils.string(brokerOrder, "brokerOrderId");
+                if (brokerOrderId != null && !brokerOrderId.isBlank()) {
+                    pendingSellBrokerOrderIds.add(brokerOrderId);
+                }
+            }
         }
 
         for (Map<String, Object> localOrder : localOrders) {
@@ -333,6 +385,8 @@ public class PilotService {
                     "orderStatus", orderStatus,
                     "brokerStatus", brokerStatus,
                     "filledQuantity", MapUtils.decimal(brokerOrder, "filledQuantity").toPlainString(),
+                    "filledPrice", MapUtils.decimal(brokerOrder, "filledPrice").signum() > 0
+                            ? MapUtils.decimal(brokerOrder, "filledPrice").toPlainString() : null,
                     "remainingQuantity", MapUtils.decimal(brokerOrder, "remainingQuantity").toPlainString(),
                     "errorMessage", MapUtils.string(brokerOrder, "brokerMessage"),
                     "checkedAt", checkedAt
@@ -341,6 +395,7 @@ public class PilotService {
                     "orderId=" + orderId + ", brokerOrderId=" + brokerOrderId
                             + ", brokerStatus=" + brokerStatus + ", orderStatus=" + orderStatus);
         }
+        return result;
     }
 
     private Map<String, Object> findBrokerOrder(List<Map<String, Object>> brokerOrders,
@@ -378,43 +433,201 @@ public class PilotService {
         };
     }
 
-    private void closePositionMissingFromAccount(Map<String, Object> position, String syncedAt) {
-        closePositionFromAccountSync(position, syncedAt, "ACCOUNT_SYNC");
+    private void closePositionMissingFromAccount(Map<String, Object> position,
+                                                 String syncedAt,
+                                                 Map<String, Object> orderSync) {
+        closePositionFromAccountSync(position, syncedAt, "ACCOUNT_SYNC", orderSync);
     }
 
-    private void reconcileAccountHolding(Map<String, Object> holding, String syncedAt) {
+    private void reconcileAccountHolding(Map<String, Object> holding,
+                                         String syncedAt,
+                                         Map<String, Object> orderSync) {
         String stockCode = MapUtils.string(holding, "stockCode");
         BigDecimal averagePrice = zeroIfNull(MapUtils.decimal(holding, "averagePrice"));
         BigDecimal quantity = MapUtils.decimal(holding, "quantity");
-        BigDecimal investedAmount = averagePrice.multiply(quantity);
-        Map<String, Object> position = tradingMapper.selectActivePositionByStockCode(MapUtils.map("stockCode", stockCode));
-        if (position == null) {
-            tradingMapper.insertSyncedPosition(positionMap(
-                    null, stockCode, MapUtils.string(holding, "stockName"), TradingStatus.WHITE.name(),
-                    averagePrice, quantity, investedAmount, syncedAt));
-            Long newPositionId = tradingMapper.selectActivePositionIdByStockCode(MapUtils.map("stockCode", stockCode));
-            recordAccountSyncLifecycleEvent(newPositionId, LifecycleEventType.ACCOUNT_SYNC_CREATED, null, TradingStatus.WHITE,
-                    holding, averagePrice, quantity, "ACCOUNT_SYNC_CREATED", syncedAt);
-            insertAuditLog("ACCOUNT_SYNC_CREATED", stockCode, "created from KIS account holding");
+        List<Map<String, Object>> positions = tradingMapper.selectActivePositionsByStockCode(MapUtils.map("stockCode", stockCode));
+        if (positions.isEmpty()) {
+            createAccountSyncPosition(holding, averagePrice, quantity, syncedAt);
             return;
         }
 
-        BigDecimal beforeQuantity = holdingQuantity(position);
-        BigDecimal beforeAveragePrice = purchasePrice(position);
-        tradingMapper.updateSyncedPosition(positionMap(
-                MapUtils.longValue(position, "id"), stockCode, MapUtils.string(holding, "stockName"),
-                MapUtils.string(position, "status"), averagePrice, quantity, investedAmount, syncedAt));
-        if (quantity.signum() == 0) {
-            closePositionFromAccountSync(position, syncedAt, "ACCOUNT_SYNC");
+        BigDecimal localQuantity = positions.stream()
+                .map(this::holdingQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (quantity.compareTo(localQuantity) > 0) {
+            BigDecimal externalQuantity = quantity.subtract(localQuantity);
+            createAccountSyncPosition(holding, averagePrice, externalQuantity, syncedAt);
+            insertAuditLog("ACCOUNT_SYNC_UPDATED", stockCode,
+                    "created separate account-sync position for quantity not linked to a local buy order");
+        } else if (quantity.compareTo(localQuantity) < 0) {
+            reducePositionsToAccountQuantity(positions, quantity, syncedAt, orderSync);
+            insertAuditLog("ACCOUNT_SYNC_UPDATED", stockCode,
+                    "reduced local positions to KIS holding quantity");
+        }
+    }
+
+    private void createAccountSyncPosition(Map<String, Object> holding,
+                                           BigDecimal averagePrice,
+                                           BigDecimal quantity,
+                                           String syncedAt) {
+        if (quantity.signum() <= 0) {
             return;
         }
-        if (beforeQuantity.compareTo(quantity) != 0 || beforeAveragePrice.compareTo(averagePrice) != 0) {
-            recordAccountSyncLifecycleEvent(MapUtils.longValue(position, "id"), LifecycleEventType.ACCOUNT_SYNC_UPDATED,
-                    tradingStatus(MapUtils.string(position, "status")), tradingStatus(MapUtils.string(position, "status")),
-                    holding, averagePrice, quantity, "ACCOUNT_SYNC_UPDATED", syncedAt);
-            insertAuditLog("ACCOUNT_SYNC_UPDATED", stockCode,
-                    "quantity/averagePrice synchronized from KIS account");
+        String stockCode = MapUtils.string(holding, "stockCode");
+        String accountSyncSource = MapUtils.string(holding, "accountSyncSource");
+        if (accountSyncSource == null || accountSyncSource.isBlank()) {
+            accountSyncSource = "KIS_HOLDING";
         }
+        BigDecimal investedAmount = averagePrice.multiply(quantity);
+        tradingMapper.insertSyncedPosition(positionMap(
+                null, stockCode, MapUtils.string(holding, "stockName"), TradingStatus.WHITE.name(),
+                averagePrice, quantity, investedAmount, syncedAt, accountSyncSource));
+        Map<String, Object> position = tradingMapper.selectLatestActivePositionByStockCode(MapUtils.map("stockCode", stockCode));
+        Long positionId = position == null ? null : MapUtils.longValue(position, "id");
+        String lifecycleKey = lifecycleKey(positionId);
+        if (positionId != null) {
+            tradingMapper.updatePositionLifecycleKey(MapUtils.map(
+                    "positionId", positionId,
+                    "lifecycleKey", lifecycleKey,
+                    "updatedAt", syncedAt
+            ));
+        }
+        Long lifecycleOrderId = null;
+        if (!"KIS_HOLDING".equals(accountSyncSource)) {
+            lifecycleOrderId = insertAccountSyncFallbackOrder(
+                    positionId, lifecycleKey, stockCode, averagePrice, quantity, syncedAt, accountSyncSource);
+        } else if (positionId != null) {
+            Map<String, Object> acceptedBuyOrder = tradingMapper.selectUnlinkedAcceptedBuyOrderByStockCode(
+                    MapUtils.map("stockCode", stockCode));
+            if (acceptedBuyOrder != null) {
+                lifecycleOrderId = MapUtils.longValue(acceptedBuyOrder, "id");
+                tradingMapper.markOrderFilledByAccountSync(MapUtils.map(
+                        "orderId", lifecycleOrderId,
+                        "filledQuantity", plain(quantity),
+                        "filledPrice", plain(averagePrice),
+                        "checkedAt", syncedAt,
+                        "errorMessage", "ACCOUNT_SYNC_BUY_CONFIRMED"
+                ));
+                tradingMapper.updateOrderPositionId(MapUtils.map(
+                        "orderId", lifecycleOrderId,
+                        "positionId", positionId,
+                        "lifecycleKey", lifecycleKey,
+                        "updatedAt", syncedAt
+                ));
+                String brokerOrderId = MapUtils.string(acceptedBuyOrder, "brokerOrderId");
+                if (brokerOrderId != null && !brokerOrderId.isBlank()) {
+                    tradingMapper.updatePositionBrokerOrderId(MapUtils.map(
+                            "positionId", positionId,
+                            "brokerOrderId", brokerOrderId,
+                            "updatedAt", syncedAt
+                    ));
+                }
+                insertAuditLog("ACCOUNT_SYNC_ORDER_LINKED", stockCode,
+                        "accepted BUY order linked to KIS holding; orderId=" + lifecycleOrderId);
+            }
+        }
+        recordAccountSyncLifecycleEvent(positionId, LifecycleEventType.ACCOUNT_SYNC_CREATED, null, TradingStatus.WHITE,
+                holding, averagePrice, quantity, "ACCOUNT_SYNC_CREATED:" + accountSyncSource, syncedAt, lifecycleOrderId,
+                lifecycleKey);
+        insertAuditLog("ACCOUNT_SYNC_CREATED", stockCode, "created from KIS account holding; source=" + accountSyncSource);
+        if (!"KIS_HOLDING".equals(accountSyncSource)) {
+            insertAuditLog("ACCOUNT_SYNC_FALLBACK", stockCode,
+                    "recovery marker recorded; source=" + accountSyncSource + ", lifecycleKey=" + lifecycleKey);
+        }
+    }
+
+    private Long insertAccountSyncFallbackOrder(Long positionId,
+                                                String lifecycleKey,
+                                                String stockCode,
+                                                BigDecimal averagePrice,
+                                                BigDecimal quantity,
+                                                String syncedAt,
+                                                String accountSyncSource) {
+        String idempotencyKey = "account-sync-fallback:" + lifecycleKey;
+        tradingMapper.insertOrderRecordDetailed(MapUtils.map(
+                "brokerOrderId", null,
+                "positionId", positionId,
+                "stockCode", stockCode,
+                "orderType", "BUY",
+                "orderQuantity", plain(quantity),
+                "orderPrice", plain(averagePrice),
+                "orderAmount", plain(averagePrice.multiply(quantity)),
+                "orderStatus", "ACCOUNT_SYNC_FALLBACK",
+                "errorMessage", "No broker order; KIS holding recovery provenance marker",
+                "requestedAt", syncedAt,
+                "idempotencyKey", idempotencyKey,
+                "decisionCycleId", "account-sync:" + syncedAt,
+                "instanceId", runtimeProperties.getInstanceId(),
+                "maskedAccount", maskedAccountNumber(),
+                "skipReason", "ACCOUNT_SYNC_FALLBACK",
+                "exitReason", null,
+                "dryRun", "N",
+                "currentPrice", plain(averagePrice),
+                "currentPriceAt", syncedAt,
+                "candidateRank", null,
+                "tradingValueScore", null,
+                "volumeScore", null,
+                "volatilityScore", null,
+                "totalScore", null,
+                "positionStatus", TradingStatus.WHITE.name(),
+                "averageBuyPrice", plain(averagePrice),
+                "highestPrice", plain(averagePrice),
+                "lowestPrice", plain(averagePrice),
+                "returnRate", "0",
+                "grayTradingDays", 0,
+                "brokerOrderOrgNo", null,
+                "lifecycleKey", lifecycleKey,
+                "orderSource", "ACCOUNT_SYNC_FALLBACK"
+        ));
+        Map<String, Object> order = tradingMapper.selectOrderByIdempotencyKey(MapUtils.map("idempotencyKey", idempotencyKey));
+        if (order != null) {
+            tradingMapper.markOrderFilledByAccountSync(MapUtils.map(
+                    "orderId", MapUtils.longValue(order, "id"),
+                    "filledQuantity", plain(quantity),
+                    "filledPrice", plain(averagePrice),
+                    "checkedAt", syncedAt,
+                    "errorMessage", "ACCOUNT_SYNC_FALLBACK_CONFIRMED"
+            ));
+        }
+        return order == null ? null : MapUtils.longValue(order, "id");
+    }
+
+    private void reducePositionsToAccountQuantity(List<Map<String, Object>> positions,
+                                                  BigDecimal accountQuantity,
+                                                  String syncedAt,
+                                                  Map<String, Object> orderSync) {
+        BigDecimal remaining = accountQuantity;
+        for (Map<String, Object> position : positions) {
+            BigDecimal currentQuantity = holdingQuantity(position);
+            if (remaining.compareTo(currentQuantity) >= 0) {
+                remaining = remaining.subtract(currentQuantity);
+                continue;
+            }
+            if (remaining.signum() > 0) {
+                updatePositionQuantity(position, remaining, syncedAt);
+                remaining = BigDecimal.ZERO;
+            } else {
+                closePositionFromAccountSync(position, syncedAt, "ACCOUNT_SYNC", orderSync);
+            }
+        }
+    }
+
+    private void updatePositionQuantity(Map<String, Object> position, BigDecimal quantity, String updatedAt) {
+        BigDecimal averagePrice = purchasePrice(position);
+        tradingMapper.updatePositionHoldingQuantity(MapUtils.map(
+                "positionId", MapUtils.longValue(position, "id"),
+                "holdingQuantity", plain(quantity),
+                "investedAmount", plain(averagePrice.multiply(quantity)),
+                "updatedAt", updatedAt
+        ));
+        Map<String, Object> updatedPosition = new LinkedHashMap<>(position);
+        updatedPosition.put("holdingQuantity", quantity);
+        updatedPosition.put("purchaseQuantity", quantity);
+        updatedPosition.put("investedAmount", averagePrice.multiply(quantity));
+        recordLifecycleEvent(snapshotEvent(updatedPosition, LifecycleEventType.ACCOUNT_SYNC_UPDATED,
+                tradingStatus(MapUtils.string(position, "status")), tradingStatus(MapUtils.string(position, "status")),
+                MapUtils.decimal(position, "currentPrice"), "ACCOUNT_SYNC_QUANTITY_REDUCED",
+                "account-sync-partial:" + MapUtils.longValue(position, "id") + ":" + updatedAt, null));
     }
 
     private void recordAccountSyncLifecycleEvent(Long positionId,
@@ -425,7 +638,9 @@ public class PilotService {
                                                  BigDecimal averagePrice,
                                                  BigDecimal quantity,
                                                  String reason,
-                                                 String syncedAt) {
+                                                 String syncedAt,
+                                                 Long orderId,
+                                                 String lifecycleKey) {
         if (positionId == null) {
             return;
         }
@@ -443,9 +658,10 @@ public class PilotService {
                 "returnRate", BigDecimal.ZERO,
                 "grayTradingDays", 0,
                 "reason", reason,
-                "orderId", null,
+                "orderId", orderId,
                 "executionId", MapUtils.string(holding, "stockCode"),
                 "idempotencyKey", "account-sync:" + MapUtils.string(holding, "stockCode") + ":" + positionId + ":" + eventType.name() + ":" + syncedAt,
+                "lifecycleKey", lifecycleKey,
                 "occurredAt", OffsetDateTime.parse(syncedAt, TIME_FORMATTER)
         ));
     }
@@ -476,6 +692,9 @@ public class PilotService {
                 "orderId", MapUtils.value(event, "orderId") == null ? null : MapUtils.longValue(event, "orderId"),
                 "executionId", MapUtils.string(event, "executionId"),
                 "idempotencyKey", key,
+                "lifecycleKey", MapUtils.string(event, "lifecycleKey") == null
+                        ? lifecycleKey(MapUtils.longValue(event, "lifecycleId"))
+                        : MapUtils.string(event, "lifecycleKey"),
                 "occurredAt", MapUtils.offsetDateTime(event, "occurredAt") == null ? OffsetDateTime.now().format(TIME_FORMATTER) : MapUtils.offsetDateTime(event, "occurredAt").format(TIME_FORMATTER)
         ));
     }
@@ -488,13 +707,15 @@ public class PilotService {
                 if (stockCode == null || stockCode.isBlank()) {
                     continue;
                 }
-                if (tradingMapper.countOpenSellOrderByStockCode(MapUtils.map("stockCode", stockCode)) > 0) {
+                Long positionId = MapUtils.longValue(position, "id");
+                if (tradingMapper.countOpenSellOrderByPositionId(MapUtils.map("positionId", positionId)) > 0
+                        || tradingMapper.countOpenUnlinkedSellOrderByStockCode(MapUtils.map("stockCode", stockCode)) > 0) {
                     logger.info("BLACK sell skipped because open sell order exists. stockCode={}", stockCode);
                     continue;
                 }
                 BigDecimal quantity = holdingQuantity(position);
                 if (quantity.signum() <= 0) {
-                    closePosition(position, now(), "ZERO_HOLDING_QUANTITY");
+                    insertAuditLog("SELL_SKIPPED", stockCode, "ZERO_HOLDING_QUANTITY; waiting for account sync");
                     continue;
                 }
                 Map<String, Object> currentPrice = brokerClient.getCurrentPrice(stockCode);
@@ -508,6 +729,8 @@ public class PilotService {
                 String idempotencyKey = maskedAccountNumber() + "|AUTO|SELL|" + stockCode + "|" + MapUtils.longValue(position, "id") + "|" + decisionCycleId;
                 Map<String, Object> request = MapUtils.map(
                         "stockCode", stockCode,
+                        "positionId", positionId,
+                        "lifecycleKey", lifecycleKey(positionId),
                         "orderQuantity", quantity,
                         "orderPrice", orderPrice(currentPrice),
                         "orderAmount", quantity.multiply(price),
@@ -518,6 +741,17 @@ public class PilotService {
                         "maskedAccount", maskedAccountNumber(),
                         "currentPrice", price,
                         "currentPriceAt", MapUtils.offsetDateTime(currentPrice, "receivedAt"),
+                        "candidateRank", null,
+                        "tradingValueScore", null,
+                        "volumeScore", null,
+                        "volatilityScore", null,
+                        "totalScore", null,
+                        "positionStatus", MapUtils.string(position, "status"),
+                        "averageBuyPrice", plain(purchasePrice(position)),
+                        "highestPrice", plain(max(zeroIfNull(MapUtils.decimal(position, "highestPrice")), price)),
+                        "lowestPrice", plain(min(nonZeroOr(MapUtils.decimal(position, "lowestPrice"), price), price)),
+                        "returnRate", plain(rate(price, purchasePrice(position))),
+                        "grayTradingDays", MapUtils.integer(position, "grayTradingDays"),
                         "exitReason", exitReason(position)
                 );
                 Map<String, Object> result = orderExecutor.sell(request);
@@ -700,6 +934,8 @@ public class PilotService {
         String grayEnteredDate = MapUtils.string(position, "grayEnteredDate");
         int grayTradingDays = MapUtils.integer(position, "grayTradingDays");
         String flatStartedDate = MapUtils.string(position, "flatStartedDate");
+        String flatActive = "Y".equalsIgnoreCase(MapUtils.string(position, "flatActive"))
+                || (flatStartedDate != null && !flatStartedDate.isBlank()) ? "Y" : "N";
         BigDecimal statusReferencePrice = zeroIfNull(MapUtils.decimal(position, "statusReferencePrice"));
         BigDecimal referencePrice = zeroIfNull(MapUtils.decimal(position, "referencePrice"));
 
@@ -710,17 +946,20 @@ public class PilotService {
                 nextStatus = TradingStatus.BLACK;
                 reason = exitReason;
                 flatStartedDate = null;
+                flatActive = "N";
             } else if (comparison < 0) {
                 nextStatus = TradingStatus.GRAY;
                 reason = "PRICE_DECLINE";
                 grayEnteredDate = today.toString();
                 grayTradingDays = 0;
                 flatStartedDate = null;
+                flatActive = "N";
                 statusReferencePrice = previousPrice;
                 referencePrice = previousPrice;
             } else if (comparison == 0) {
-                if (flatStartedDate == null || flatStartedDate.isBlank()) {
+                if (!"Y".equals(flatActive)) {
                     flatStartedDate = today.toString();
+                    flatActive = "Y";
                 }
                 long flatTradingDays = tradingDayService.countTradingDays(LocalDate.parse(flatStartedDate), today);
                 if (isGraceExpired(flatTradingDays, investmentProperties.getWhiteFlatGraceTradingDays())) {
@@ -731,13 +970,17 @@ public class PilotService {
                     statusReferencePrice = previousPrice;
                     referencePrice = previousPrice;
                     flatStartedDate = null;
+                    flatActive = "N";
                 }
             } else {
                 flatStartedDate = null;
+                flatActive = "N";
                 statusReferencePrice = currentPrice;
                 referencePrice = currentPrice;
             }
         } else if (previousStatus == TradingStatus.GRAY) {
+            flatStartedDate = null;
+            flatActive = "N";
             if (grayEnteredDate == null || grayEnteredDate.isBlank()) {
                 grayEnteredDate = today.toString();
             }
@@ -755,7 +998,8 @@ public class PilotService {
             if (exitReason != null) {
                 nextStatus = TradingStatus.BLACK;
                 reason = exitReason;
-            } else if (currentPrice.compareTo(purchasePrice) >= 0) {
+            } else if (currentPrice.compareTo(previousPrice) > 0
+                    && currentPrice.compareTo(purchasePrice) >= 0) {
                 nextStatus = TradingStatus.WHITE;
                 reason = "PRICE_RECOVERED";
                 grayEnteredDate = null;
@@ -781,7 +1025,6 @@ public class PilotService {
                 "statusReferencePrice", plain(statusReferencePrice),
                 "grayEnteredDate", grayEnteredDate,
                 "grayTradingDays", grayTradingDays,
-                "averageBuyPrice", plain(purchasePrice),
                 "referencePrice", plain(referencePrice),
                 "highestPrice", plain(highestPrice),
                 "lowestPrice", plain(lowestPrice),
@@ -789,6 +1032,7 @@ public class PilotService {
                 "returnRate", plain(returnRate),
                 "lastEvaluatedAt", evaluatedAt,
                 "flatStartedDate", flatStartedDate,
+                "flatActive", flatActive,
                 "updatedAt", evaluatedAt
         ));
 
@@ -838,6 +1082,7 @@ public class PilotService {
         BigDecimal averageBuyPrice = purchasePrice(position);
         return MapUtils.map(
                 "lifecycleId", MapUtils.longValue(position, "id"),
+                "lifecycleKey", lifecycleKey(MapUtils.longValue(position, "id")),
                 "eventType", eventType,
                 "previousState", previousStatus,
                 "newState", newStatus,
@@ -857,12 +1102,54 @@ public class PilotService {
         );
     }
 
-    private void closePosition(Map<String, Object> position, String closedAt, String reason) {
+    private void closePositionFromAccountSync(Map<String, Object> position,
+                                              String closedAt,
+                                              String reason,
+                                              Map<String, Object> orderSync) {
         BigDecimal currentPrice = zeroIfNull(MapUtils.decimal(position, "currentPrice"));
         BigDecimal quantity = holdingQuantity(position);
         BigDecimal purchasePrice = purchasePrice(position);
         BigDecimal valuationAmount = currentPrice.multiply(quantity);
         BigDecimal returnRate = rate(currentPrice, purchasePrice);
+        TradingStatus previousStatus = tradingStatus(MapUtils.string(position, "status"));
+        Map<String, Object> sellOrder = tradingMapper.selectLatestSellOrderByPositionId(MapUtils.map(
+                "positionId", MapUtils.longValue(position, "id")
+        ));
+        if (sellOrder == null) {
+            Long fallbackSellOrderId = insertAccountSyncFallbackSellOrder(position, closedAt, currentPrice, quantity, reason);
+            sellOrder = fallbackSellOrderId == null ? null : tradingMapper.selectLatestSellOrderByPositionId(MapUtils.map(
+                    "positionId", MapUtils.longValue(position, "id")
+            ));
+        }
+        Long sellOrderId = sellOrder == null ? null : MapUtils.longValue(sellOrder, "id");
+        if (sellOrder != null) {
+            if (!MapUtils.bool(orderSync, "successful")) {
+                insertAuditLog("ACCOUNT_SYNC_SELL_PENDING", MapUtils.string(position, "stockCode"),
+                        "sell order status inquiry failed; position remains active; orderId=" + sellOrderId);
+                return;
+            }
+            String brokerOrderId = MapUtils.string(sellOrder, "brokerOrderId");
+            Object pendingIdsValue = MapUtils.value(orderSync, "pendingSellBrokerOrderIds");
+            boolean pending = pendingIdsValue instanceof Set<?> pendingIds
+                    && brokerOrderId != null
+                    && pendingIds.contains(brokerOrderId);
+            if (pending) {
+                insertAuditLog("ACCOUNT_SYNC_SELL_PENDING", MapUtils.string(position, "stockCode"),
+                        "KIS sell order remains open; sell retry remains reserved; orderId=" + sellOrderId);
+                return;
+            }
+            if (isOpenLocalOrderStatus(MapUtils.string(sellOrder, "orderStatus"))) {
+                tradingMapper.markOrderFilledByAccountSync(MapUtils.map(
+                        "orderId", sellOrderId,
+                        "filledQuantity", plain(quantity),
+                        "filledPrice", plain(currentPrice),
+                        "checkedAt", closedAt,
+                        "errorMessage", "ACCOUNT_SYNC_SELL_CONFIRMED"
+                ));
+                insertAuditLog("ACCOUNT_SYNC_SELL_CONFIRMED", MapUtils.string(position, "stockCode"),
+                        "KIS holding disappeared and no open KIS sell order remained; orderId=" + sellOrderId);
+            }
+        }
         tradingMapper.closePosition(MapUtils.map(
                 "positionId", MapUtils.longValue(position, "id"),
                 "currentPrice", plain(currentPrice),
@@ -871,34 +1158,90 @@ public class PilotService {
                 "returnRate", plain(returnRate),
                 "closedAt", closedAt
         ));
-        TradingStatus previousStatus = tradingStatus(MapUtils.string(position, "status"));
-        recordLifecycleEvent(snapshotEvent(position, LifecycleEventType.SELL_FILLED, previousStatus, previousStatus,
-                currentPrice, reason, "sell-filled:" + MapUtils.longValue(position, "id") + ":" + closedAt, null));
+        recordLifecycleEvent(snapshotEvent(position, LifecycleEventType.ACCOUNT_SYNC_CLOSED, previousStatus, TradingStatus.CLOSED,
+                currentPrice, reason, "account-sync-closed:" + MapUtils.longValue(position, "id") + ":" + closedAt, sellOrderId));
         recordLifecycleEvent(snapshotEvent(position, LifecycleEventType.CLOSED, previousStatus, TradingStatus.CLOSED,
-                currentPrice, reason, "closed:" + MapUtils.longValue(position, "id") + ":" + closedAt, null));
-        insertAuditLog("POSITION_CLOSED", MapUtils.string(position, "stockCode"), reason);
-        logger.info("position closed. stockCode={}, reason={}", MapUtils.string(position, "stockCode"), reason);
+                currentPrice, reason, "closed-account-sync:" + MapUtils.longValue(position, "id") + ":" + closedAt, sellOrderId));
+        insertAuditLog("ACCOUNT_SYNC_CLOSED", MapUtils.string(position, "stockCode"),
+                reason + (sellOrderId == null ? "" : "; sellOrderId=" + sellOrderId));
+        logger.info("position closed by startup account sync. stockCode={}, reason={}", MapUtils.string(position, "stockCode"), reason);
     }
 
-    private void closePositionFromAccountSync(Map<String, Object> position, String closedAt, String reason) {
-        BigDecimal currentPrice = zeroIfNull(MapUtils.decimal(position, "currentPrice"));
-        BigDecimal quantity = holdingQuantity(position);
-        BigDecimal purchasePrice = purchasePrice(position);
-        BigDecimal valuationAmount = currentPrice.multiply(quantity);
-        BigDecimal returnRate = rate(currentPrice, purchasePrice);
-        tradingMapper.closePosition(MapUtils.map(
-                "positionId", MapUtils.longValue(position, "id"),
-                "currentPrice", plain(currentPrice),
-                "currentValuationAmount", plain(valuationAmount),
-                "profitRate", plain(returnRate),
-                "returnRate", plain(returnRate),
-                "closedAt", closedAt
+    private Long insertAccountSyncFallbackSellOrder(Map<String, Object> position,
+                                                    String occurredAt,
+                                                    BigDecimal currentPrice,
+                                                    BigDecimal quantity,
+                                                    String reason) {
+        Long positionId = MapUtils.longValue(position, "id");
+        String lifecycleKey = lifecycleKey(positionId);
+        String idempotencyKey = "account-sync-sell-fallback:" + lifecycleKey;
+        Map<String, Object> existing = tradingMapper.selectOrderByIdempotencyKey(MapUtils.map(
+                "idempotencyKey", idempotencyKey
         ));
-        TradingStatus previousStatus = tradingStatus(MapUtils.string(position, "status"));
-        recordLifecycleEvent(snapshotEvent(position, LifecycleEventType.ACCOUNT_SYNC_CLOSED, previousStatus, TradingStatus.CLOSED,
-                currentPrice, reason, "account-sync-closed:" + MapUtils.longValue(position, "id") + ":" + closedAt, null));
-        insertAuditLog("ACCOUNT_SYNC_CLOSED", MapUtils.string(position, "stockCode"), reason);
-        logger.info("position closed by startup account sync. stockCode={}, reason={}", MapUtils.string(position, "stockCode"), reason);
+        if (existing == null) {
+            BigDecimal averageBuyPrice = purchasePrice(position);
+            tradingMapper.insertOrderRecordDetailed(MapUtils.map(
+                    "brokerOrderId", null,
+                    "positionId", positionId,
+                    "stockCode", MapUtils.string(position, "stockCode"),
+                    "orderType", "SELL",
+                    "orderQuantity", plain(quantity),
+                    "orderPrice", plain(currentPrice),
+                    "orderAmount", plain(currentPrice.multiply(quantity)),
+                    "orderStatus", "ACCOUNT_SYNC_FALLBACK",
+                    "errorMessage", "No local broker sell order; account sync confirmed position disappearance",
+                    "requestedAt", occurredAt,
+                    "idempotencyKey", idempotencyKey,
+                    "decisionCycleId", "account-sync-sell:" + occurredAt,
+                    "instanceId", runtimeProperties.getInstanceId(),
+                    "maskedAccount", maskedAccountNumber(),
+                    "skipReason", null,
+                    "exitReason", reason,
+                    "dryRun", "N",
+                    "currentPrice", plain(currentPrice),
+                    "currentPriceAt", occurredAt,
+                    "candidateRank", null,
+                    "tradingValueScore", null,
+                    "volumeScore", null,
+                    "volatilityScore", null,
+                    "totalScore", null,
+                    "positionStatus", MapUtils.string(position, "status"),
+                    "averageBuyPrice", plain(averageBuyPrice),
+                    "highestPrice", plain(max(zeroIfNull(MapUtils.decimal(position, "highestPrice")), currentPrice)),
+                    "lowestPrice", plain(min(nonZeroOr(MapUtils.decimal(position, "lowestPrice"), currentPrice), currentPrice)),
+                    "returnRate", plain(rate(currentPrice, averageBuyPrice)),
+                    "grayTradingDays", MapUtils.integer(position, "grayTradingDays"),
+                    "brokerOrderOrgNo", null,
+                    "lifecycleKey", lifecycleKey,
+                    "orderSource", "ACCOUNT_SYNC_FALLBACK"
+            ));
+            existing = tradingMapper.selectOrderByIdempotencyKey(MapUtils.map("idempotencyKey", idempotencyKey));
+        }
+        if (existing == null) {
+            return null;
+        }
+        Long orderId = MapUtils.longValue(existing, "id");
+        tradingMapper.markOrderFilledByAccountSync(MapUtils.map(
+                "orderId", orderId,
+                "filledQuantity", plain(quantity),
+                "filledPrice", plain(currentPrice),
+                "checkedAt", occurredAt,
+                "errorMessage", "ACCOUNT_SYNC_SELL_FALLBACK_CONFIRMED"
+        ));
+        return orderId;
+    }
+
+    private boolean isPendingBrokerOrder(String brokerStatus) {
+        return "OPEN".equalsIgnoreCase(brokerStatus)
+                || "PARTIALLY_FILLED".equalsIgnoreCase(brokerStatus);
+    }
+
+    private boolean isOpenLocalOrderStatus(String orderStatus) {
+        return "ORDERING".equalsIgnoreCase(orderStatus)
+                || "REQUESTED".equalsIgnoreCase(orderStatus)
+                || "ACCEPTED".equalsIgnoreCase(orderStatus)
+                || "PARTIALLY_FILLED".equalsIgnoreCase(orderStatus)
+                || "RETRY_PENDING".equalsIgnoreCase(orderStatus);
     }
 
     private String defaultLifecycleIdempotencyKey(Map<String, Object> event) {
@@ -953,7 +1296,12 @@ public class PilotService {
                 logger.info("buy pipeline skipped because overseas candidate was not selected");
                 return;
             }
+            int attempts = 0;
             for (Map<String, Object> candidate : candidates) {
+                if (attempts >= MAX_BUY_ATTEMPTS_PER_CYCLE) {
+                    break;
+                }
+                attempts++;
                 tryBuyCandidate(candidate, decisionCycleId);
             }
             return;
@@ -964,7 +1312,12 @@ public class PilotService {
             logger.info("buy pipeline skipped because domestic candidate was not selected");
             return;
         }
+        int attempts = 0;
         for (Map<String, Object> candidate : candidates) {
+            if (attempts >= MAX_BUY_ATTEMPTS_PER_CYCLE) {
+                break;
+            }
+            attempts++;
             tryBuyCandidate(candidate, decisionCycleId);
         }
     }
@@ -982,7 +1335,7 @@ public class PilotService {
                     : brokerClient.getAccountBalance();
             Map<String, Object> sizingResult = orderSizingService.calculateBuyQuantity(currentPrice, buyableBalance, BigDecimal.ZERO);
             if (!MapUtils.bool(sizingResult, "orderable")) {
-                recordSkippedBuyOrder(normalizedStockCode, currentPrice, MapUtils.string(sizingResult, "reason"), decisionCycleId, idempotencyKey, validationOrder);
+                recordSkippedBuyOrder(candidate, currentPrice, MapUtils.string(sizingResult, "reason"), decisionCycleId, idempotencyKey, validationOrder);
                 insertAuditLog("BUY_SKIPPED", normalizedStockCode, MapUtils.string(sizingResult, "reason"));
                 logger.info("buy skipped. stockCode={}, reason={}", normalizedStockCode, MapUtils.string(sizingResult, "reason"));
                 if (validationOrder) {
@@ -1006,7 +1359,7 @@ public class PilotService {
                     true
             );
             if (!MapUtils.bool(safetyResult, "orderAllowed")) {
-                recordBlockedBuyOrder(normalizedStockCode, currentPrice, sizingResult, MapUtils.string(safetyResult, "reason"), decisionCycleId, idempotencyKey, validationOrder);
+                recordBlockedBuyOrder(candidate, currentPrice, sizingResult, MapUtils.string(safetyResult, "reason"), decisionCycleId, idempotencyKey, validationOrder);
                 insertAuditLog("BUY_BLOCKED", normalizedStockCode, MapUtils.string(safetyResult, "reason"));
                 logger.info("buy blocked. stockCode={}, reason={}", normalizedStockCode, MapUtils.string(safetyResult, "reason"));
                 if (validationOrder) {
@@ -1039,6 +1392,17 @@ public class PilotService {
                     "maskedAccount", maskedAccountNumber(),
                     "currentPrice", MapUtils.decimal(currentPrice, "price"),
                     "currentPriceAt", MapUtils.offsetDateTime(currentPrice, "receivedAt"),
+                    "candidateRank", MapUtils.value(candidate, "candidateRank"),
+                    "tradingValueScore", MapUtils.value(candidate, "tradingValueScore"),
+                    "volumeScore", MapUtils.value(candidate, "volumeScore"),
+                    "volatilityScore", MapUtils.value(candidate, "volatilityScore"),
+                    "totalScore", MapUtils.value(candidate, "totalScore"),
+                    "positionStatus", null,
+                    "averageBuyPrice", null,
+                    "highestPrice", null,
+                    "lowestPrice", null,
+                    "returnRate", null,
+                    "grayTradingDays", null,
                     "exitReason", null
             );
             Map<String, Object> orderResult = orderExecutor.buy(request);
@@ -1077,21 +1441,21 @@ public class PilotService {
         domesticStockCandidateService.recordBuyResult(MapUtils.string(candidate, "symbol"), MapUtils.string(candidate, "marketCode"), accepted, reason);
     }
 
-    private void recordSkippedBuyOrder(String stockCode,
+    private void recordSkippedBuyOrder(Map<String, Object> candidate,
                                        Map<String, Object> currentPrice,
                                        String reason,
                                        String decisionCycleId,
                                        String idempotencyKey,
                                        boolean validationOrder) {
         tradingMapper.insertOrderRecordDetailed(orderRecord(
-                stockCode, "BUY", "0", orderPrice(currentPrice).toPlainString(), "0",
+                candidate, "BUY", "0", orderPrice(currentPrice).toPlainString(), "0",
                 "SKIPPED", reason, decisionCycleId, idempotencyKey, reason, null, currentPrice));
         if (validationOrder) {
-            insertAuditLog("FRACTIONAL_VALIDATION_SKIPPED", stockCode, reason);
+            insertAuditLog("FRACTIONAL_VALIDATION_SKIPPED", MapUtils.string(candidate, "symbol"), reason);
         }
     }
 
-    private void recordBlockedBuyOrder(String stockCode,
+    private void recordBlockedBuyOrder(Map<String, Object> candidate,
                                        Map<String, Object> currentPrice,
                                        Map<String, Object> sizingResult,
                                        String reason,
@@ -1099,11 +1463,11 @@ public class PilotService {
                                        String idempotencyKey,
                                        boolean validationOrder) {
         tradingMapper.insertOrderRecordDetailed(orderRecord(
-                stockCode, "BUY", MapUtils.decimal(sizingResult, "quantity").toPlainString(), orderPrice(currentPrice).toPlainString(),
+                candidate, "BUY", MapUtils.decimal(sizingResult, "quantity").toPlainString(), orderPrice(currentPrice).toPlainString(),
                 MapUtils.decimal(sizingResult, "expectedAmount").toPlainString(), "BLOCKED", reason, decisionCycleId,
                 idempotencyKey, reason, null, currentPrice));
         if (validationOrder) {
-            insertAuditLog("FRACTIONAL_VALIDATION_BLOCKED", stockCode, reason);
+            insertAuditLog("FRACTIONAL_VALIDATION_BLOCKED", MapUtils.string(candidate, "symbol"), reason);
         }
     }
 
@@ -1212,7 +1576,7 @@ public class PilotService {
     }
 
     private boolean isGraceExpired(long tradingDays, int graceTradingDays) {
-        return graceTradingDays <= 0 || tradingDays >= graceTradingDays;
+        return graceTradingDays <= 0 || tradingDays > graceTradingDays;
     }
 
     private String maskedAccountNumber() {
@@ -1248,9 +1612,10 @@ public class PilotService {
                                             String stockName,
                                             String status,
                                             BigDecimal averagePrice,
-                                            BigDecimal quantity,
-                                            BigDecimal investedAmount,
-                                            String syncedAt) {
+                                             BigDecimal quantity,
+                                             BigDecimal investedAmount,
+                                             String syncedAt,
+                                             String accountSyncSource) {
         return MapUtils.map(
                 "positionId", positionId,
                 "stockCode", stockCode,
@@ -1272,9 +1637,16 @@ public class PilotService {
                 "holdingQuantity", plain(quantity),
                 "returnRate", "0",
                 "lastEvaluatedAt", syncedAt,
+                "flatActive", "N",
+                "accountSyncSource", accountSyncSource,
+                "lifecycleKey", null,
                 "createdAt", syncedAt,
                 "updatedAt", syncedAt
         );
+    }
+
+    private String lifecycleKey(Long positionId) {
+        return positionId == null ? null : "POSITION-" + positionId;
     }
 
     private void insertAuditLog(String eventType, String stockCode, String details) {
@@ -1300,7 +1672,7 @@ public class PilotService {
         ));
     }
 
-    private Map<String, Object> orderRecord(String stockCode,
+    private Map<String, Object> orderRecord(Map<String, Object> candidate,
                                             String orderType,
                                             String orderQuantity,
                                             String orderPrice,
@@ -1315,7 +1687,8 @@ public class PilotService {
         String requestedAt = now();
         return MapUtils.map(
                 "brokerOrderId", null,
-                "stockCode", stockCode,
+                "positionId", null,
+                "stockCode", MapUtils.string(candidate, "symbol"),
                 "orderType", orderType,
                 "orderQuantity", orderQuantity,
                 "orderPrice", orderPrice,
@@ -1331,7 +1704,18 @@ public class PilotService {
                 "exitReason", exitReason,
                 "dryRun", "N",
                 "currentPrice", MapUtils.value(currentPrice, "price") == null ? null : MapUtils.decimal(currentPrice, "price").toPlainString(),
-                "currentPriceAt", MapUtils.offsetDateTime(currentPrice, "receivedAt") == null ? null : MapUtils.offsetDateTime(currentPrice, "receivedAt").format(TIME_FORMATTER)
+                "currentPriceAt", MapUtils.offsetDateTime(currentPrice, "receivedAt") == null ? null : MapUtils.offsetDateTime(currentPrice, "receivedAt").format(TIME_FORMATTER),
+                "candidateRank", MapUtils.value(candidate, "candidateRank"),
+                "tradingValueScore", MapUtils.value(candidate, "tradingValueScore"),
+                "volumeScore", MapUtils.value(candidate, "volumeScore"),
+                "volatilityScore", MapUtils.value(candidate, "volatilityScore"),
+                "totalScore", MapUtils.value(candidate, "totalScore"),
+                "positionStatus", null,
+                "averageBuyPrice", null,
+                "highestPrice", null,
+                "lowestPrice", null,
+                "returnRate", null,
+                "grayTradingDays", null
         );
     }
 

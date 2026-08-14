@@ -26,13 +26,7 @@ public class LiveOrderExecutor implements OrderExecutor {
             String status = tradingMapper.selectOrderStatusByIdempotencyKey(MapUtils.map("idempotencyKey", MapUtils.string(request, "idempotencyKey")));
             return reused(status, "live buy reused by idempotency key");
         }
-        reserveOrder("BUY", MapUtils.string(request, "stockCode"), MapUtils.decimal(request, "orderQuantity").toPlainString(),
-                MapUtils.value(request, "orderPrice") == null ? null : MapUtils.decimal(request, "orderPrice").toPlainString(),
-                MapUtils.decimal(request, "orderAmount").toPlainString(), MapUtils.string(request, "reason"), MapUtils.string(request, "decisionCycleId"),
-                MapUtils.string(request, "idempotencyKey"), MapUtils.string(request, "instanceId"), MapUtils.string(request, "maskedAccount"),
-                MapUtils.value(request, "exitReason") == null ? null : MapUtils.string(request, "exitReason"),
-                MapUtils.value(request, "currentPrice") == null ? null : MapUtils.decimal(request, "currentPrice").toPlainString(),
-                MapUtils.offsetDateTime(request, "currentPriceAt") == null ? null : MapUtils.offsetDateTime(request, "currentPriceAt").format(TIME_FORMATTER));
+        reserveOrder("BUY", request);
         try {
             Map<String, Object> result = brokerClient.buy(request);
             updateBrokerResult(MapUtils.string(request, "idempotencyKey"), result);
@@ -49,13 +43,7 @@ public class LiveOrderExecutor implements OrderExecutor {
             String status = tradingMapper.selectOrderStatusByIdempotencyKey(MapUtils.map("idempotencyKey", MapUtils.string(request, "idempotencyKey")));
             return reused(status, "live sell reused by idempotency key");
         }
-        reserveOrder("SELL", MapUtils.string(request, "stockCode"), MapUtils.decimal(request, "orderQuantity").toPlainString(),
-                MapUtils.value(request, "orderPrice") == null ? null : MapUtils.decimal(request, "orderPrice").toPlainString(),
-                MapUtils.decimal(request, "orderAmount").toPlainString(), MapUtils.string(request, "reason"), MapUtils.string(request, "decisionCycleId"),
-                MapUtils.string(request, "idempotencyKey"), MapUtils.string(request, "instanceId"), MapUtils.string(request, "maskedAccount"),
-                MapUtils.value(request, "exitReason") == null ? null : MapUtils.string(request, "exitReason"),
-                MapUtils.value(request, "currentPrice") == null ? null : MapUtils.decimal(request, "currentPrice").toPlainString(),
-                MapUtils.offsetDateTime(request, "currentPriceAt") == null ? null : MapUtils.offsetDateTime(request, "currentPriceAt").format(TIME_FORMATTER));
+        reserveOrder("SELL", request);
         try {
             Map<String, Object> result = brokerClient.sell(request);
             updateBrokerResult(MapUtils.string(request, "idempotencyKey"), result);
@@ -71,40 +59,42 @@ public class LiveOrderExecutor implements OrderExecutor {
                 && tradingMapper.countOrderByIdempotencyKey(MapUtils.map("idempotencyKey", idempotencyKey)) > 0;
     }
 
-    private void reserveOrder(String orderType,
-                              String stockCode,
-                              String orderQuantity,
-                              String orderPrice,
-                              String orderAmount,
-                              String errorMessage,
-                              String decisionCycleId,
-                              String idempotencyKey,
-                              String instanceId,
-                              String maskedAccount,
-                              String exitReason,
-                              String currentPrice,
-                              String currentPriceAt) {
+    private void reserveOrder(String orderType, Map<String, Object> request) {
         String requestedAt = OffsetDateTime.now().format(TIME_FORMATTER);
         tradingMapper.insertOrderRecordDetailed(MapUtils.map(
-                "brokerOrderId", null,
-                "stockCode", stockCode,
+                 "brokerOrderId", null,
+                 "positionId", MapUtils.value(request, "positionId") == null ? null : MapUtils.longValue(request, "positionId"),
+                 "lifecycleKey", MapUtils.string(request, "lifecycleKey"),
+                "stockCode", MapUtils.string(request, "stockCode"),
                 "orderType", orderType,
-                "orderQuantity", orderQuantity,
-                "orderPrice", orderPrice,
-                "orderAmount", orderAmount,
+                "orderQuantity", MapUtils.decimal(request, "orderQuantity").toPlainString(),
+                "orderPrice", MapUtils.value(request, "orderPrice") == null ? null : MapUtils.decimal(request, "orderPrice").toPlainString(),
+                "orderAmount", MapUtils.decimal(request, "orderAmount").toPlainString(),
                 "orderStatus", "ORDERING",
-                "errorMessage", errorMessage,
+                "errorMessage", null,
                 "requestedAt", requestedAt,
-                "idempotencyKey", idempotencyKey,
-                "decisionCycleId", decisionCycleId,
-                "instanceId", instanceId,
-                "maskedAccount", maskedAccount,
+                "idempotencyKey", MapUtils.string(request, "idempotencyKey"),
+                "decisionCycleId", MapUtils.string(request, "decisionCycleId"),
+                "instanceId", MapUtils.string(request, "instanceId"),
+                "maskedAccount", MapUtils.string(request, "maskedAccount"),
                 "skipReason", null,
-                "exitReason", exitReason,
+                "exitReason", MapUtils.value(request, "exitReason") == null ? null : MapUtils.string(request, "exitReason"),
                 "dryRun", "N",
-                "currentPrice", currentPrice,
-                "currentPriceAt", currentPriceAt
-        ));
+                "currentPrice", MapUtils.value(request, "currentPrice") == null ? null : MapUtils.decimal(request, "currentPrice").toPlainString(),
+                "currentPriceAt", MapUtils.offsetDateTime(request, "currentPriceAt") == null ? null : MapUtils.offsetDateTime(request, "currentPriceAt").format(TIME_FORMATTER),
+                "candidateRank", MapUtils.value(request, "candidateRank"),
+                "tradingValueScore", MapUtils.value(request, "tradingValueScore"),
+                "volumeScore", MapUtils.value(request, "volumeScore"),
+                "volatilityScore", MapUtils.value(request, "volatilityScore"),
+                "totalScore", MapUtils.value(request, "totalScore"),
+                "positionStatus", MapUtils.value(request, "positionStatus"),
+                "averageBuyPrice", MapUtils.value(request, "averageBuyPrice"),
+                "highestPrice", MapUtils.value(request, "highestPrice"),
+                "lowestPrice", MapUtils.value(request, "lowestPrice"),
+                "returnRate", MapUtils.value(request, "returnRate"),
+                 "grayTradingDays", MapUtils.value(request, "grayTradingDays")
+                 ,"orderSource", MapUtils.value(request, "orderSource") == null ? "BROKER_ORDER" : MapUtils.string(request, "orderSource")
+         ));
     }
 
     private void updateBrokerResult(String idempotencyKey, Map<String, Object> result) {

@@ -84,7 +84,9 @@ public class DryRunOrderExecutor implements OrderExecutor {
                                             String requestedAt,
                                             String dryRun) {
         return MapUtils.map(
-                "brokerOrderId", null,
+                 "brokerOrderId", null,
+                 "positionId", MapUtils.value(request, "positionId") == null ? null : MapUtils.longValue(request, "positionId"),
+                 "lifecycleKey", MapUtils.string(request, "lifecycleKey"),
                 "stockCode", MapUtils.string(request, "stockCode"),
                 "orderType", orderType,
                 "orderQuantity", MapUtils.decimal(request, "orderQuantity").toPlainString(),
@@ -101,7 +103,19 @@ public class DryRunOrderExecutor implements OrderExecutor {
                 "exitReason", MapUtils.value(request, "exitReason") == null ? null : MapUtils.string(request, "exitReason"),
                 "dryRun", dryRun,
                 "currentPrice", MapUtils.value(request, "currentPrice") == null ? null : MapUtils.decimal(request, "currentPrice").toPlainString(),
-                "currentPriceAt", MapUtils.offsetDateTime(request, "currentPriceAt") == null ? null : MapUtils.offsetDateTime(request, "currentPriceAt").format(TIME_FORMATTER)
-        );
+                "currentPriceAt", MapUtils.offsetDateTime(request, "currentPriceAt") == null ? null : MapUtils.offsetDateTime(request, "currentPriceAt").format(TIME_FORMATTER),
+                "candidateRank", MapUtils.value(request, "candidateRank"),
+                "tradingValueScore", MapUtils.value(request, "tradingValueScore"),
+                "volumeScore", MapUtils.value(request, "volumeScore"),
+                "volatilityScore", MapUtils.value(request, "volatilityScore"),
+                "totalScore", MapUtils.value(request, "totalScore"),
+                "positionStatus", MapUtils.value(request, "positionStatus"),
+                "averageBuyPrice", MapUtils.value(request, "averageBuyPrice"),
+                "highestPrice", MapUtils.value(request, "highestPrice"),
+                "lowestPrice", MapUtils.value(request, "lowestPrice"),
+                "returnRate", MapUtils.value(request, "returnRate"),
+                 "grayTradingDays", MapUtils.value(request, "grayTradingDays")
+                 ,"orderSource", "DRY_RUN"
+         );
     }
 }

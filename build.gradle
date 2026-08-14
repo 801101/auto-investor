@@ -28,3 +28,10 @@ bootJar {
     exclude 'application-local.yml'
     exclude '*.db'
 }
+
+processResources {
+    exclude '*.db'
+    from('src/main/view') {
+        into 'view'
+    }
+}
