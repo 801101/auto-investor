@@ -502,9 +502,9 @@ CREATE TABLE IF NOT EXISTS POSITIONS (
     STOCK_NAME TEXT,
     /* WHITE, GRAY, BLACK, CLOSED */
     STATUS TEXT NOT NULL,
-    /* 최초 매수가 */
+    /* POSITION 생성 시 확정한 최초 매수가. 정상 운영 중 변경하지 않음 */
     PURCHASE_PRICE TEXT NOT NULL,
-    /* 최초 매수 수량 */
+    /* POSITION 생성 시 확정한 최초 보유 수량 */
     PURCHASE_QUANTITY TEXT NOT NULL,
     /* 현재 투자 원금 */
     INVESTED_AMOUNT TEXT NOT NULL,
@@ -522,7 +522,7 @@ CREATE TABLE IF NOT EXISTS POSITIONS (
     GRAY_ENTERED_DATE TEXT,
     /* GRAY 경과 거래일 수 */
     GRAY_TRADING_DAYS INTEGER NOT NULL DEFAULT 0,
-    /* 포지션 생성 매수 주문번호 */
+    /* Account Sync로 POSITION과 연결된 BUY 주문번호. 연결 전에는 NULL */
     BROKER_ORDER_ID TEXT,
     /* 보유 중 Y, 종료 N */
     ACTIVE TEXT NOT NULL DEFAULT 'Y',
@@ -530,7 +530,7 @@ CREATE TABLE IF NOT EXISTS POSITIONS (
     CREATED_AT TEXT NOT NULL,
     /* 최종 수정 시각 */
     UPDATED_AT TEXT NOT NULL,
-    /* KIS 동기화 기준 평균 매수가 */
+    /* POSITION 생성 시 확정한 평균 매수가. 정상 운영 중 불변 */
     AVERAGE_BUY_PRICE TEXT,
     /* 상태 판단용 기준가 */
     REFERENCE_PRICE TEXT,
@@ -559,7 +559,7 @@ CREATE TABLE IF NOT EXISTS ORDERS (
     ID INTEGER PRIMARY KEY AUTOINCREMENT,
     /* KIS 주문번호 */
     BROKER_ORDER_ID TEXT,
-    /* 이 주문과 연결된 POSITIONS.ID. BUY 접수 전에는 NULL일 수 있음 */
+    /* 이 주문과 연결된 POSITIONS.ID. Account Sync 확인 전 BUY는 NULL일 수 있음 */
     POSITION_ID INTEGER,
     /* 종목 코드 */
     STOCK_CODE TEXT NOT NULL,
@@ -571,7 +571,7 @@ CREATE TABLE IF NOT EXISTS ORDERS (
     ORDER_PRICE TEXT,
     /* 주문 목표 금액 */
     ORDER_AMOUNT TEXT NOT NULL,
-    /* REQUESTED, ACCEPTED, PARTIALLY_FILLED, FILLED, CANCELLED, REJECTED 등 */
+    /* REQUESTED, ACCEPTED, PARTIALLY_FILLED, FILLED, CANCELLED, REJECTED 등. FILLED는 Lifecycle 연결 완료 상태 */
     ORDER_STATUS TEXT NOT NULL,
     /* 재시도 횟수 */
     RETRY_COUNT INTEGER NOT NULL DEFAULT 0,
@@ -581,7 +581,7 @@ CREATE TABLE IF NOT EXISTS ORDERS (
     REQUESTED_AT TEXT NOT NULL,
     /* KIS 접수 확인 시각 */
     ACCEPTED_AT TEXT,
-    /* 실제 체결 완료 시각 */
+    /* Lifecycle 연결 완료 시각. Account Sync 확정 또는 KIS 결과 확정 시 기록 */
     FILLED_AT TEXT,
     /* 최종 수정 시각 */
     UPDATED_AT TEXT NOT NULL,
@@ -637,9 +637,9 @@ CREATE TABLE IF NOT EXISTS ORDERS (
     BROKER_ORDER_ORGNO TEXT,
     /* KIS 주문 상태 원문 */
     BROKER_STATUS TEXT,
-    /* 실제 체결 수량 */
+    /* KIS 원문 체결 수량 또는 Account Sync 확정 수량 */
     FILLED_QUANTITY TEXT,
-    /* 실제 체결 평균 가격. 부분 체결 누적과 재시작 복구에 사용 */
+    /* KIS 원문 체결 평균 가격 또는 Account Sync 확정 가격 */
     FILLED_PRICE TEXT,
     /* 미체결 잔여 수량 */
     REMAINING_QUANTITY TEXT,
@@ -743,7 +743,7 @@ CREATE TABLE IF NOT EXISTS STOCK_DASHBOARD (
     DASHBOARD_STATUS TEXT NOT NULL,
     /* 화면 표시 가격 */
     LAST_PRICE TEXT,
-    /* 체결 완료 매수 건수 */
+    /* Account Sync 또는 KIS 결과로 Lifecycle 연결이 완료된 매수 건수 */
     COMPLETED_BUY_COUNT INTEGER NOT NULL DEFAULT 0,
     /* 진행 중 매수 건수 */
     PENDING_BUY_COUNT INTEGER NOT NULL DEFAULT 0,
