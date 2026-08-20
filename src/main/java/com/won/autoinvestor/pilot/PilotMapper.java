@@ -74,6 +74,8 @@ public interface PilotMapper {
 
     void updateOrderStatusByBrokerOrderId(Map<String, Object> parameter);
 
+    void markSellOrderFilledByKisOrderMissing(Map<String, Object> parameter);
+
     void updateOrderBrokerStatusById(Map<String, Object> parameter);
 
     int countOpenSellOrderByPositionId(Map<String, Object> parameter);

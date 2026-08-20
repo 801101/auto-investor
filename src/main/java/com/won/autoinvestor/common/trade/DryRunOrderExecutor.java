@@ -25,11 +25,11 @@ public class DryRunOrderExecutor implements OrderExecutor {
         String requestedAt = now();
         if (exists(MapUtils.string(request, "idempotencyKey"))) {
             String status = tradingMapper.selectOrderStatusByIdempotencyKey(MapUtils.map("idempotencyKey", MapUtils.string(request, "idempotencyKey")));
-            logger.info("[DRY_RUN_BUY_REUSED] stockCode={}, idempotencyKey={}, status={}",
+            logger.debug("[DRY_RUN_BUY_REUSED] stockCode={}, idempotencyKey={}, status={}",
                     MapUtils.string(request, "stockCode"), MapUtils.string(request, "idempotencyKey"), status);
             return reused(status, "dry-run buy reused by idempotency key");
         }
-        logger.info("[DRY_RUN_BUY] stockCode={}, quantity={}, amount={}, price={}, reason={}",
+        logger.debug("[DRY_RUN_BUY] stockCode={}, quantity={}, amount={}, price={}, reason={}",
                 MapUtils.string(request, "stockCode"), MapUtils.decimal(request, "orderQuantity"),
                 MapUtils.decimal(request, "orderAmount"), MapUtils.decimal(request, "orderPrice"), MapUtils.string(request, "reason"));
         tradingMapper.insertOrderRecordDetailed(orderRecord(request, "BUY", "DRY_RUN", null, requestedAt, "Y"));
@@ -42,11 +42,11 @@ public class DryRunOrderExecutor implements OrderExecutor {
         String requestedAt = now();
         if (exists(MapUtils.string(request, "idempotencyKey"))) {
             String status = tradingMapper.selectOrderStatusByIdempotencyKey(MapUtils.map("idempotencyKey", MapUtils.string(request, "idempotencyKey")));
-            logger.info("[DRY_RUN_SELL_REUSED] stockCode={}, idempotencyKey={}, status={}",
+            logger.debug("[DRY_RUN_SELL_REUSED] stockCode={}, idempotencyKey={}, status={}",
                     MapUtils.string(request, "stockCode"), MapUtils.string(request, "idempotencyKey"), status);
             return reused(status, "dry-run sell reused by idempotency key");
         }
-        logger.info("[DRY_RUN_SELL] stockCode={}, quantity={}, amount={}, price={}, reason={}",
+        logger.debug("[DRY_RUN_SELL] stockCode={}, quantity={}, amount={}, price={}, reason={}",
                 MapUtils.string(request, "stockCode"), MapUtils.decimal(request, "orderQuantity"),
                 MapUtils.decimal(request, "orderAmount"), MapUtils.decimal(request, "orderPrice"), MapUtils.string(request, "reason"));
         tradingMapper.insertOrderRecordDetailed(orderRecord(request, "SELL", "DRY_RUN", null, requestedAt, "Y"));

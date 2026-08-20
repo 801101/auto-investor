@@ -131,7 +131,9 @@ public class TradingSchemaInitializer {
                     /* KIS 정상 보유값 또는 계좌 동기화 대체값의 출처 */
                     ACCOUNT_SYNC_SOURCE TEXT,
                     /* POSITION, BUY ORDER, SELL ORDER, 이력을 묶는 불변 생애주기 키 */
-                    LIFECYCLE_KEY TEXT
+                    LIFECYCLE_KEY TEXT,
+                    /* 이 포지션의 국내·해외 시장 구분. 매도 API 선택에 사용 */
+                    MARKET_TYPE TEXT
                 )
                 """);
         addColumnIfMissing(connection, "POSITIONS", "AVERAGE_BUY_PRICE", "TEXT");
@@ -145,6 +147,7 @@ public class TradingSchemaInitializer {
         addColumnIfMissing(connection, "POSITIONS", "FLAT_ACTIVE", "TEXT NOT NULL DEFAULT 'N'");
         addColumnIfMissing(connection, "POSITIONS", "ACCOUNT_SYNC_SOURCE", "TEXT");
         addColumnIfMissing(connection, "POSITIONS", "LIFECYCLE_KEY", "TEXT");
+        addColumnIfMissing(connection, "POSITIONS", "MARKET_TYPE", "TEXT");
         statement.executeUpdate("UPDATE POSITIONS SET LIFECYCLE_KEY = 'POSITION-' || ID WHERE LIFECYCLE_KEY IS NULL");
         statement.executeUpdate("UPDATE POSITIONS SET ACCOUNT_SYNC_SOURCE = 'LEGACY_UNKNOWN' WHERE ACCOUNT_SYNC_SOURCE IS NULL");
         statement.executeUpdate("""
@@ -764,7 +767,8 @@ public class TradingSchemaInitializer {
                 "LAST_EVALUATED_PRICE", "STATUS_REFERENCE_PRICE", "GRAY_ENTERED_DATE", "GRAY_TRADING_DAYS",
                 "BROKER_ORDER_ID", "ACTIVE", "CREATED_AT", "UPDATED_AT", "AVERAGE_BUY_PRICE",
                 "REFERENCE_PRICE", "HIGHEST_PRICE", "LOWEST_PRICE", "HOLDING_QUANTITY", "RETURN_RATE",
-                "LAST_EVALUATED_AT", "FLAT_STARTED_DATE", "FLAT_ACTIVE", "ACCOUNT_SYNC_SOURCE", "LIFECYCLE_KEY"));
+                "LAST_EVALUATED_AT", "FLAT_STARTED_DATE", "FLAT_ACTIVE", "ACCOUNT_SYNC_SOURCE", "LIFECYCLE_KEY",
+                "MARKET_TYPE"));
         tableColumns.put("ORDERS", List.of(
                 "ID", "BROKER_ORDER_ID", "POSITION_ID", "STOCK_CODE", "ORDER_TYPE", "ORDER_QUANTITY", "ORDER_PRICE",
                 "ORDER_AMOUNT", "ORDER_STATUS", "RETRY_COUNT", "ERROR_MESSAGE", "REQUESTED_AT",

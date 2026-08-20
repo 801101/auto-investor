@@ -27,7 +27,7 @@ runtime:
 
 investment:
     market:
-        # DOMESTIC=국내, OVERSEAS=해외
+        # 신규 후보와 BUY 주문에 사용할 시장입니다. 내부 갱신과 매도는 포지션 시장을 우선합니다.
         type: ${INVESTMENT_MARKET_TYPE:OVERSEAS}
         # 국내 시장 범위입니다. ALL/KOSPI/KOSDAQ
         domestic-market-code: ${INVESTMENT_DOMESTIC_MARKET_CODE:ALL}
@@ -81,3 +81,8 @@ kis:
     account-number: ${KIS_ACCOUNT_NUMBER:}
     # KIS 계좌상품코드 2자리입니다.
     account-product-code: ${KIS_ACCOUNT_PRODUCT_CODE:}
+
+# 정상 처리 로그는 숨기고 경고와 오류만 출력합니다.
+logging:
+    level:
+        root: WARN

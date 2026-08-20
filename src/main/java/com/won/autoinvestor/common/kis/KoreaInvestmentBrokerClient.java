@@ -20,6 +20,7 @@ import java.time.OffsetDateTime;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -174,9 +175,14 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
 
     @Override
     public Map<String, Object> getCurrentPrice(String stockCode) {
+        return getCurrentPrice(stockCode, investmentProperties.getMarketType());
+    }
+
+    @Override
+    public Map<String, Object> getCurrentPrice(String stockCode, String marketType) {
         JsonNode response;
         BigDecimal price;
-        if (isOverseasMarket()) {
+        if (isOverseasMarket(marketType)) {
             response = authenticatedGet(kisProperties.getOverseasPricePath(), kisProperties.getOverseasPriceTrId(), Map.of(
                     "AUTH", "",
                     "EXCD", investmentProperties.getOverseasPriceExchangeCode(),
@@ -206,7 +212,7 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
 
     @Override
     public Map<String, Object> sell(Map<String, Object> request) {
-        if (isOverseasMarket()) {
+        if (isOverseasMarket(resolveMarketType(request))) {
             return overseasOrder("SELL", overseasSellTrId(), MapUtils.string(request, "stockCode"),
                     MapUtils.decimal(request, "orderQuantity"), MapUtils.decimal(request, "orderPrice"));
         }
@@ -220,7 +226,7 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
         String brokerOrderId = MapUtils.string(request, "brokerOrderId");
         String quantity = plain(MapUtils.decimal(request, "orderQuantity"));
         try {
-            if (isOverseasMarket()) {
+            if (isOverseasMarket(resolveMarketType(request))) {
                 Map<String, String> body = new LinkedHashMap<>();
                 body.put("CANO", kisProperties.getAccountNumber());
                 body.put("ACNT_PRDT_CD", kisProperties.getAccountProductCode());
@@ -283,7 +289,7 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
             query.put("ORD_END_DT", endDate);
             query.put("SLL_BUY_DVSN", "00");
             query.put("CCLD_NCCS_DVSN", "00");
-            query.put("OVRS_EXCG_CD", kisProperties.isPaperMode() ? "" : "%");
+            query.put("OVRS_EXCG_CD", investmentProperties.getOverseasExchangeCode());
             query.put("SORT_SQN", kisProperties.isPaperMode() ? "" : "DS");
             query.put("ORD_DT", "");
             query.put("ORD_GNO_BRNO", "");
@@ -439,7 +445,10 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
                     "PDNO", stockCode,
                     "ORD_DVSN", kisProperties.getOrderDivision(),
                     "ORD_QTY", orderQuantity.toPlainString(),
-                    "ORD_UNPR", orderPrice == null ? "0" : orderPrice.toPlainString()
+                    "ORD_UNPR", orderPrice == null ? "0" : orderPrice.toPlainString(),
+                    "EXCG_ID_DVSN_CD", "KRX",
+                    "SLL_TYPE", "",
+                    "CNDT_PRIC", ""
             ), true);
         } catch (RestClientResponseException e) {
             return rejected(rejectedMessage(e));
@@ -449,7 +458,7 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
         String brokerOrderOrgNo = textFirst(output, "KRX_FWDG_ORD_ORGNO", "krx_fwdg_ord_orgno");
         String message = response.path("msg1").asText(orderType + " order requested");
         String status = response.path("rt_cd").asText("UNKNOWN");
-        logger.info("KIS {} order response. stockCode={}, brokerOrderId={}, status={}, message={}",
+        logger.debug("KIS {} order response. stockCode={}, brokerOrderId={}, status={}, message={}",
                 orderType, stockCode, brokerOrderId, status, message);
         if (!"0".equals(status)) {
             return rejected(orderResponseSummary(response));
@@ -487,7 +496,7 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
         String brokerOrderId = textFirst(output, "ODNO", "odno");
         String message = response.path("msg1").asText(orderType + " overseas order requested");
         String status = response.path("rt_cd").asText("UNKNOWN");
-        logger.info("KIS overseas {} order response. stockCode={}, brokerOrderId={}, status={}, message={}",
+        logger.debug("KIS overseas {} order response. stockCode={}, brokerOrderId={}, status={}, message={}",
                 orderType, stockCode, brokerOrderId, status, message);
         if (!"0".equals(status)) {
             return rejected(orderResponseSummary(response));
@@ -773,7 +782,23 @@ public class KoreaInvestmentBrokerClient implements BrokerClient {
     }
 
     private boolean isOverseasMarket() {
-        return "OVERSEAS".equalsIgnoreCase(investmentProperties.getMarketType());
+        return isOverseasMarket(investmentProperties.getMarketType());
+    }
+
+    private boolean isOverseasMarket(String marketType) {
+        return "OVERSEAS".equalsIgnoreCase(resolveMarketType(marketType));
+    }
+
+    private String resolveMarketType(Map<String, Object> request) {
+        String marketType = request == null ? null : MapUtils.string(request, "marketType");
+        return resolveMarketType(marketType);
+    }
+
+    private String resolveMarketType(String marketType) {
+        if ("DOMESTIC".equalsIgnoreCase(marketType) || "OVERSEAS".equalsIgnoreCase(marketType)) {
+            return marketType.toUpperCase(Locale.ROOT);
+        }
+        return investmentProperties.getMarketType();
     }
 
     private String overseasBuyTrId() {

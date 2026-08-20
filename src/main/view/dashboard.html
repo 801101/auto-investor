@@ -150,23 +150,35 @@
             padding: 15px 17px 0;
         }
 
-        .table-panel > summary {
+        .table-toggle {
+            display: flex;
+            width: 100%;
+            box-sizing: border-box;
             padding: 16px 17px;
             cursor: pointer;
-            list-style: none;
+            min-height: 56px;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            border: 0;
             border-radius: 8px;
+            text-align: left;
+            color: var(--ink);
+            background: transparent;
+            user-select: none;
         }
 
-        .table-panel > summary::-webkit-details-marker { display: none; }
-        .table-panel > summary::after { content: "펼치기"; color: var(--teal); font-size: 12px; font-weight: 700; }
-        .table-panel > summary:hover { background: #f6fafb; }
-        .table-panel[open] > summary { border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
-        .table-panel[open] > summary::after { content: "접기"; }
+        .table-toggle::after { content: "펼치기"; color: var(--teal); font-size: 12px; font-weight: 700; }
+        .table-toggle:hover { background: #f6fafb; }
+        .table-panel.is-open .table-toggle { border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+        .table-panel.is-open .table-toggle::after { content: "접기"; }
+        .table-content[hidden] { display: none; }
 
         h2 { font-size: 15px; font-weight: 700; }
         .panel-meta { color: var(--muted); font-size: 12px; }
         .chart-wrap { position: relative; min-height: 260px; padding: 16px; }
         canvas { display: block; width: 100%; height: 240px; }
+        canvas[hidden] { display: none; }
         .chart-empty { display: grid; place-items: center; min-height: 240px; color: var(--muted); font-size: 13px; }
         .chart-empty[hidden] { display: none; }
         .status-panel { height: 320px; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
@@ -181,8 +193,10 @@
         .order-summary-value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
         .profit-panel { height: 320px; min-height: 0; display: flex; flex-direction: column; }
         .profit-layout { flex: 1 1 auto; min-height: 0; display: flex; padding: 8px 16px 16px; }
-        .profit-layout .chart-wrap { flex: 1 1 auto; height: 100%; min-height: 0; padding: 8px 0; }
+        .profit-layout .chart-wrap { position: relative; display: grid; place-items: center; flex: 1 1 auto; height: 100%; min-height: 0; padding: 8px 0; overflow: hidden; }
         .profit-layout canvas { width: 100%; height: 100%; }
+        .profit-layout .chart-empty { position: absolute; inset: 8px 0; min-height: 0; height: auto; pointer-events: none; }
+        .profit-layout .chart-empty[hidden] { display: none; }
 
         .legend {
             display: flex;
@@ -296,8 +310,11 @@
         </article>
     </section>
 
-    <details class="panel table-panel">
-        <summary class="panel-title"><h2>전체 보유 포지션</h2><span class="panel-meta" id="rowMeta">-</span></summary>
+    <section class="panel table-panel" id="positionsPanel">
+        <button class="table-toggle" id="positionsToggle" type="button" aria-expanded="false" aria-controls="positionsContent">
+            <h2>전체 보유 포지션</h2><span class="panel-meta" id="rowMeta">-</span>
+        </button>
+        <div class="table-content" id="positionsContent" hidden>
         <div class="toolbar">
             <select id="statusFilter" aria-label="상태 필터">
                 <option value="ALL">전체 상태</option>
@@ -317,7 +334,8 @@
                 <tbody id="positionsBody"><tr><td class="empty-row" colspan="11">데이터를 불러오는 중입니다.</td></tr></tbody>
             </table>
         </div>
-    </details>
+        </div>
+    </section>
 </main>
 
 <script>
@@ -696,6 +714,15 @@
     document.getElementById('tradingButton').addEventListener('click', () => requestBatch('/api/trading/run-cycle'));
     document.getElementById('statusFilter').addEventListener('change', renderTable);
     document.getElementById('searchInput').addEventListener('input', renderTable);
+    const positionsPanel = document.getElementById('positionsPanel');
+    const positionsToggle = document.getElementById('positionsToggle');
+    const positionsContent = document.getElementById('positionsContent');
+    positionsToggle.addEventListener('click', () => {
+        const open = !positionsPanel.classList.contains('is-open');
+        positionsPanel.classList.toggle('is-open', open);
+        positionsToggle.setAttribute('aria-expanded', String(open));
+        positionsContent.hidden = !open;
+    });
     window.addEventListener('resize', () => { drawStatusChart(allPositions); drawProfitChart(allPositions); });
 
     window.setInterval(() => {

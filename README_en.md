@@ -21,6 +21,34 @@ The local database does not replace the brokerage account. It stores local state
 - The next synchronization should recover local state after a temporary failure or unexpected shutdown.
 - All strategy decisions are based on WHITE / GRAY / BLACK.
 
+### Market Responsibility
+
+`investment.market.type` selects the market for **new entries**. Candidate generation and BUY orders follow this setting.
+
+When a POSITION is created, its market is stored in `POSITIONS.MARKET_TYPE`. Internal price refresh and SELL orders use the position market first, rather than the current entry setting.
+
+```text
+New BUY
+    |
+    v
+investment.market.type
+    |
+    v
+Domestic or overseas candidate and BUY
+
+POSITION created
+    |
+    v
+POSITIONS.MARKET_TYPE
+    |
+    +-- Internal refresh: price API for that market
+    +-- BLACK SELL: sell API for that market
+                              |
+                              +-- Missing or invalid value falls back to investment.market.type
+```
+
+Changing `market.type` to `DOMESTIC` does not force an existing position with `POSITIONS.MARKET_TYPE=OVERSEAS` through the domestic SELL API. Legacy positions without a market value use the current setting as a fallback.
+
 ## 1. Environment
 
 - Java 17 or later
@@ -91,7 +119,7 @@ The default configuration is in `src/main/resources/application.yml`. PC-specifi
 
 The `investment` group contains market, order, holding, candidate, and strategy policies.
 
-- `market.type`: `DOMESTIC` or `OVERSEAS`
+- `market.type`: market for new candidates and BUY orders; existing refresh and SELL use `POSITIONS.MARKET_TYPE`
 - `order.unit-type`: `AMOUNT` or `SHARE`
 - `order.unit-amount`: target amount for amount-based orders
 - `order.unit-shares`: quantity for share-based orders

@@ -2,6 +2,7 @@ package com.won.autoinvestor.common.trade;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.won.autoinvestor.common.kis.KisProperties;
 import com.won.autoinvestor.common.util.MapUtils;
 import com.won.autoinvestor.common.config.InvestmentProperties;
 import com.won.autoinvestor.pilot.PilotMapper;
@@ -30,15 +31,18 @@ public class OverseasStockCandidateService {
     private static final long RETRY_INTERVAL_SECONDS = 30L;
 
     private final InvestmentProperties investmentProperties;
+    private final KisProperties kisProperties;
     private final PilotMapper mapper;
     private final Clock clock;
     private final ObjectMapper objectMapper;
 
     public OverseasStockCandidateService(InvestmentProperties investmentProperties,
+                                         KisProperties kisProperties,
                                          PilotMapper mapper,
                                          Clock clock,
                                          ObjectMapper objectMapper) {
         this.investmentProperties = investmentProperties;
+        this.kisProperties = kisProperties;
         this.mapper = mapper;
         this.clock = clock;
         this.objectMapper = objectMapper;
@@ -48,7 +52,7 @@ public class OverseasStockCandidateService {
     public List<Map<String, Object>> findOrderTargetsForCycle() {
         String now = now();
         if (!isOverseasOrderMode()) {
-            logger.info("overseas candidate skipped because market is not overseas");
+            logger.debug("overseas candidate skipped because market is not overseas");
             return List.of();
         }
 
@@ -56,7 +60,7 @@ public class OverseasStockCandidateService {
         int remainingSlots = remainingSlots(usedSlots);
         if (remainingSlots <= 0) {
             mapper.insertAuditLog(MapUtils.map("eventType", "BUY_SKIPPED", "stockCode", null, "details", "MAX_HOLDING_SLOTS_REACHED", "createdAt", now));
-            logger.info("overseas candidate skipped because max holding slots reached. usedSlots={}, maxHoldings={}",
+            logger.debug("overseas candidate skipped because max holding slots reached. usedSlots={}, maxHoldings={}",
                     usedSlots, investmentProperties.getMaxHoldings());
             refreshDashboard(now, usedSlots, 0);
             return List.of();
@@ -66,13 +70,13 @@ public class OverseasStockCandidateService {
         if (orderTargets(selection).isEmpty()) {
             String reason = MapUtils.integer(selection, "buyableCount") == 0 ? "NO_FRACTIONAL_TRADABLE_CANDIDATE" : "NO_ELIGIBLE_CANDIDATE_AFTER_EXCLUSIONS";
             mapper.insertAuditLog(MapUtils.map("eventType", "BUY_SKIPPED", "stockCode", null, "details", reason, "createdAt", now));
-            logger.info("overseas candidate not selected. reason={}, buyableCandidates={}", reason, MapUtils.integer(selection, "buyableCount"));
+            logger.debug("overseas candidate not selected. reason={}, buyableCandidates={}", reason, MapUtils.integer(selection, "buyableCount"));
             return List.of();
         }
 
         for (Map<String, Object> candidate : orderTargets(selection)) {
             mapper.overseasTouchCandidateSelected(MapUtils.map("id", MapUtils.longValue(candidate, "id"), "selectedAt", now));
-            logger.info("overseas candidate selected. symbol={}, exchangeCode={}", MapUtils.string(candidate, "symbol"), MapUtils.string(candidate, "exchangeCode"));
+            logger.debug("overseas candidate selected. symbol={}, exchangeCode={}", MapUtils.string(candidate, "symbol"), MapUtils.string(candidate, "exchangeCode"));
         }
         return orderTargets(selection);
     }
@@ -133,7 +137,7 @@ public class OverseasStockCandidateService {
             mapper.overseasUpsertDashboardRow(toDashboardRow(scoredCandidate, rank++, zone, status, buyable, evaluatedAt));
         }
         mapper.overseasDeleteStaleDashboardRows(MapUtils.map("exchangeCode", investmentProperties.getOverseasExchangeCode(), "evaluatedAt", evaluatedAt));
-        logger.info("overseas dashboard refreshed. evaluated={}, usedSlots={}, remainingSlots={}, active={}, buffer={}, buyable={}",
+        logger.debug("overseas dashboard refreshed. evaluated={}, usedSlots={}, remainingSlots={}, active={}, buffer={}, buyable={}",
                 rows.size(), usedSlots, remainingSlots, activeCount, bufferCount, buyableCount);
         return MapUtils.map("orderTargets", targets, "buyableCount", buyableCount);
     }
@@ -215,10 +219,6 @@ public class OverseasStockCandidateService {
         if (symbol == null || symbol.isBlank()) {
             return "EMPTY_SYMBOL";
         }
-        if ("AMOUNT".equalsIgnoreCase(investmentProperties.getOrderUnitType())
-                && !isFractionalCandidateAllowed(row)) {
-            return "FRACTIONAL_NOT_CONFIRMED";
-        }
         if (isUnsupportedInstrument(row)) {
             return "UNSUPPORTED_INSTRUMENT";
         }
@@ -231,6 +231,11 @@ public class OverseasStockCandidateService {
         String retryAfter = MapUtils.string(row, "retryAfter");
         if (retryAfter != null && retryAfter.compareTo(now) > 0) {
             return "RETRY_AFTER_NOT_REACHED";
+        }
+        if ("AMOUNT".equalsIgnoreCase(investmentProperties.getOrderUnitType())
+                && !isFractionalCandidateAllowed(row)
+                && !isFractionalValidationCandidate(row)) {
+            return "FRACTIONAL_NOT_CONFIRMED";
         }
         return null;
     }
@@ -268,6 +273,12 @@ public class OverseasStockCandidateService {
 
     private boolean isFractionalCandidateAllowed(Map<String, Object> row) {
         return "YES".equalsIgnoreCase(MapUtils.string(row, "fractionalTradable"));
+    }
+
+    private boolean isFractionalValidationCandidate(Map<String, Object> row) {
+        return kisProperties.isPaperMode()
+                && "UNKNOWN".equalsIgnoreCase(MapUtils.string(row, "fractionalTradable"))
+                && MapUtils.integer(row, "verificationAttemptCount") == 0;
     }
 
     private BigDecimal rotationScore(Map<String, Object> row) {
@@ -380,7 +391,7 @@ public class OverseasStockCandidateService {
                 "volatilityScore", MapUtils.value(row, "volatilityScore"),
                 "totalScore", MapUtils.decimal(scoredCandidate, "candidateScore"),
                 "overseas", true,
-                "validationOrder", false
+                "validationOrder", isFractionalValidationCandidate(row)
         );
     }
 

@@ -18,6 +18,10 @@ public interface BrokerClient {
 
     Map<String, Object> getCurrentPrice(String stockCode);
 
+    default Map<String, Object> getCurrentPrice(String stockCode, String marketType) {
+        return getCurrentPrice(stockCode);
+    }
+
     Map<String, Object> buy(Map<String, Object> request);
 
     Map<String, Object> sell(Map<String, Object> request);

@@ -28,6 +28,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -88,7 +89,7 @@ public class PilotService {
         runLocked(SCHEDULER_TYPE, () -> {
             if (!runtimeProperties.isTradingEnabled()) {
                 insertAuditLog("TRADING_CYCLE_SKIPPED", null, "runtime.trading-enabled=false");
-                logger.info("trading cycle skipped because runtime.trading-enabled=false");
+                logger.debug("trading cycle skipped because runtime.trading-enabled=false");
                 return;
             }
             syncAccount();
@@ -113,7 +114,7 @@ public class PilotService {
                 return;
             }
             if (!runtimeProperties.isTradingEnabled()) {
-                logger.info("maintenance state evaluation skipped because runtime.trading-enabled=false");
+                logger.debug("maintenance state evaluation skipped because runtime.trading-enabled=false");
                 return;
             }
             evaluateActivePositions();
@@ -310,6 +311,9 @@ public class PilotService {
         }
 
         for (Map<String, Object> position : tradingMapper.selectActivePositions()) {
+            if (!investmentProperties.getMarketType().equalsIgnoreCase(positionMarketType(position))) {
+                continue;
+            }
             String stockCode = MapUtils.string(position, "stockCode");
             if (stockCode == null || accountHoldingCodes.contains(stockCode)) {
                 continue;
@@ -365,8 +369,22 @@ public class PilotService {
             Map<String, Object> brokerOrder = findBrokerOrder(brokerOrders, brokerOrderId,
                     MapUtils.string(localOrder, "brokerOrderOrgNo"));
             if (brokerOrder == null) {
-                logger.debug("KIS order status not returned; local order retained. orderId={}, brokerOrderId={}",
-                        orderId, brokerOrderId);
+                if ("SELL".equalsIgnoreCase(MapUtils.string(localOrder, "orderType"))) {
+                    String checkedAt = now();
+                    tradingMapper.markSellOrderFilledByKisOrderMissing(MapUtils.map(
+                            "orderId", orderId,
+                            "checkedAt", checkedAt,
+                            "errorMessage", "KIS_ORDER_NOT_FOUND_LIFECYCLE_FILLED"
+                    ));
+                    insertAuditLog("SELL_ORDER_FILLED", MapUtils.string(localOrder, "stockCode"),
+                            "orderId=" + orderId + ", brokerOrderId=" + brokerOrderId
+                                    + ", reason=KIS_ORDER_NOT_FOUND_LIFECYCLE_FILLED");
+                    logger.info("SELL lifecycle completed because KIS order was not found. stockCode={}, orderId={}",
+                            MapUtils.string(localOrder, "stockCode"), orderId);
+                } else {
+                    logger.debug("KIS BUY order status not returned; local order retained. orderId={}, brokerOrderId={}",
+                            orderId, brokerOrderId);
+                }
                 continue;
             }
 
@@ -405,7 +423,7 @@ public class PilotService {
             return null;
         }
         for (Map<String, Object> brokerOrder : brokerOrders) {
-            if (!brokerOrderId.equals(MapUtils.string(brokerOrder, "brokerOrderId"))) {
+            if (!sameBrokerOrderId(brokerOrderId, MapUtils.string(brokerOrder, "brokerOrderId"))) {
                 continue;
             }
             String remoteOrgNo = MapUtils.string(brokerOrder, "brokerOrderOrgNo");
@@ -416,6 +434,22 @@ public class PilotService {
             }
         }
         return null;
+    }
+
+    private boolean sameBrokerOrderId(String localOrderId, String brokerOrderId) {
+        if (localOrderId == null || brokerOrderId == null) {
+            return false;
+        }
+        String local = localOrderId.trim();
+        String remote = brokerOrderId.trim();
+        if (local.equals(remote)) {
+            return true;
+        }
+        if (!local.matches("\\d+") || !remote.matches("\\d+")) {
+            return false;
+        }
+        return local.replaceFirst("^0+(?!$)", "")
+                .equals(remote.replaceFirst("^0+(?!$)", ""));
     }
 
     private String localOrderStatus(Map<String, Object> localOrder, String brokerStatus) {
@@ -445,7 +479,11 @@ public class PilotService {
         String stockCode = MapUtils.string(holding, "stockCode");
         BigDecimal averagePrice = zeroIfNull(MapUtils.decimal(holding, "averagePrice"));
         BigDecimal quantity = MapUtils.decimal(holding, "quantity");
-        List<Map<String, Object>> positions = tradingMapper.selectActivePositionsByStockCode(MapUtils.map("stockCode", stockCode));
+        String marketType = investmentProperties.getMarketType();
+        List<Map<String, Object>> positions = tradingMapper.selectActivePositionsByStockCode(MapUtils.map(
+                "stockCode", stockCode,
+                "marketType", marketType
+        ));
         if (positions.isEmpty()) {
             createAccountSyncPosition(holding, averagePrice, quantity, syncedAt);
             return;
@@ -482,7 +520,10 @@ public class PilotService {
         tradingMapper.insertSyncedPosition(positionMap(
                 null, stockCode, MapUtils.string(holding, "stockName"), TradingStatus.WHITE.name(),
                 averagePrice, quantity, investedAmount, syncedAt, accountSyncSource));
-        Map<String, Object> position = tradingMapper.selectLatestActivePositionByStockCode(MapUtils.map("stockCode", stockCode));
+        Map<String, Object> position = tradingMapper.selectLatestActivePositionByStockCode(MapUtils.map(
+                "stockCode", stockCode,
+                "marketType", investmentProperties.getMarketType()
+        ));
         Long positionId = position == null ? null : MapUtils.longValue(position, "id");
         String lifecycleKey = lifecycleKey(positionId);
         if (positionId != null) {
@@ -710,7 +751,7 @@ public class PilotService {
                 Long positionId = MapUtils.longValue(position, "id");
                 if (tradingMapper.countOpenSellOrderByPositionId(MapUtils.map("positionId", positionId)) > 0
                         || tradingMapper.countOpenUnlinkedSellOrderByStockCode(MapUtils.map("stockCode", stockCode)) > 0) {
-                    logger.info("BLACK sell skipped because open sell order exists. stockCode={}", stockCode);
+                    logger.debug("BLACK sell skipped because open sell order exists. stockCode={}", stockCode);
                     continue;
                 }
                 BigDecimal quantity = holdingQuantity(position);
@@ -718,21 +759,23 @@ public class PilotService {
                     insertAuditLog("SELL_SKIPPED", stockCode, "ZERO_HOLDING_QUANTITY; waiting for account sync");
                     continue;
                 }
-                Map<String, Object> currentPrice = brokerClient.getCurrentPrice(stockCode);
+                String marketType = positionMarketType(position);
+                Map<String, Object> currentPrice = brokerClient.getCurrentPrice(stockCode, marketType);
                 BigDecimal price = MapUtils.decimal(currentPrice, "price");
                 if (price.signum() <= 0) {
                     insertAuditLog("SELL_SKIPPED", stockCode, "INVALID_CURRENT_PRICE");
-                    logger.info("BLACK sell skipped. stockCode={}, reason=INVALID_CURRENT_PRICE", stockCode);
+                    logger.debug("BLACK sell skipped. stockCode={}, reason=INVALID_CURRENT_PRICE", stockCode);
                     continue;
                 }
 
                 String idempotencyKey = maskedAccountNumber() + "|AUTO|SELL|" + stockCode + "|" + MapUtils.longValue(position, "id") + "|" + decisionCycleId;
                 Map<String, Object> request = MapUtils.map(
                         "stockCode", stockCode,
+                        "marketType", marketType,
                         "positionId", positionId,
                         "lifecycleKey", lifecycleKey(positionId),
                         "orderQuantity", quantity,
-                        "orderPrice", orderPrice(currentPrice),
+                        "orderPrice", orderPrice(currentPrice, marketType),
                         "orderAmount", quantity.multiply(price),
                         "reason", "BLACK_SELL",
                         "decisionCycleId", decisionCycleId,
@@ -775,7 +818,7 @@ public class PilotService {
             return;
         }
 
-        logger.info("cancelling open buy orders before the next buy cycle. count={}", openBuyOrders.size());
+        logger.debug("cancelling open buy orders before the next buy cycle. count={}", openBuyOrders.size());
         for (Map<String, Object> order : openBuyOrders) {
             Long orderId = MapUtils.longValue(order, "id");
             String stockCode = MapUtils.string(order, "stockCode");
@@ -789,7 +832,8 @@ public class PilotService {
                     result = MapUtils.map("accepted", false, "status", "CANCEL_FAILED", "message", "broker order number is missing");
                 } else {
                     result = brokerClient.cancel(MapUtils.map(
-                            "stockCode", stockCode,
+                        "stockCode", stockCode,
+                        "marketType", investmentProperties.getMarketType(),
                             "brokerOrderId", brokerOrderId,
                             "brokerOrderOrgNo", MapUtils.string(order, "brokerOrderOrgNo"),
                             "orderQuantity", MapUtils.decimal(order, "orderQuantity"),
@@ -816,7 +860,7 @@ public class PilotService {
                         ));
                         insertAuditLog("BUY_ORDER_CANCEL_REQUESTED", stockCode,
                                 "orderId=" + orderId + ", brokerOrderId=" + brokerOrderId);
-                        logger.info("open buy order cancellation requested; final state awaits KIS inquiry. stockCode={}, orderId={}, previousStatus={}",
+                        logger.debug("open buy order cancellation requested; final state awaits KIS inquiry. stockCode={}, orderId={}, previousStatus={}",
                                 stockCode, orderId, orderStatus);
                     }
                 } else {
@@ -840,7 +884,7 @@ public class PilotService {
             return;
         }
 
-        logger.info("cancelling open sell orders before BLACK processing. count={}", openSellOrders.size());
+        logger.debug("cancelling open sell orders before BLACK processing. count={}", openSellOrders.size());
         for (Map<String, Object> order : openSellOrders) {
             Long orderId = MapUtils.longValue(order, "id");
             String stockCode = MapUtils.string(order, "stockCode");
@@ -853,8 +897,10 @@ public class PilotService {
                 } else if (brokerOrderId == null || brokerOrderId.isBlank()) {
                     result = MapUtils.map("accepted", false, "status", "CANCEL_FAILED", "message", "broker order number is missing");
                 } else {
+                    Map<String, Object> position = tradingMapper.selectPositionById(MapUtils.map("positionId", MapUtils.longValue(order, "positionId")));
                     result = brokerClient.cancel(MapUtils.map(
                             "stockCode", stockCode,
+                            "marketType", positionMarketType(position),
                             "brokerOrderId", brokerOrderId,
                             "brokerOrderOrgNo", MapUtils.string(order, "brokerOrderOrgNo"),
                             "orderQuantity", MapUtils.decimal(order, "orderQuantity"),
@@ -881,7 +927,7 @@ public class PilotService {
                         ));
                         insertAuditLog("SELL_ORDER_CANCEL_REQUESTED", stockCode,
                                 "orderId=" + orderId + ", previousStatus=" + orderStatus);
-                        logger.info("open sell order cancellation requested; final state awaits KIS inquiry. stockCode={}, orderId={}, previousStatus={}",
+                        logger.debug("open sell order cancellation requested; final state awaits KIS inquiry. stockCode={}, orderId={}, previousStatus={}",
                                 stockCode, orderId, orderStatus);
                     }
                 } else {
@@ -909,7 +955,7 @@ public class PilotService {
             if (stockCode == null || stockCode.isBlank()) {
                 continue;
             }
-            Map<String, Object> currentPrice = brokerClient.getCurrentPrice(stockCode);
+            Map<String, Object> currentPrice = brokerClient.getCurrentPrice(stockCode, positionMarketType(position));
             BigDecimal price = MapUtils.decimal(currentPrice, "price");
             if (price.signum() <= 0) {
                 insertAuditLog("STRATEGY_EVALUATION_SKIPPED", stockCode, "INVALID_CURRENT_PRICE");
@@ -1293,7 +1339,7 @@ public class PilotService {
         if (isOverseasMarket()) {
             List<Map<String, Object>> candidates = overseasStockCandidateService.findOrderTargetsForCycle();
             if (candidates.isEmpty()) {
-                logger.info("buy pipeline skipped because overseas candidate was not selected");
+                logger.debug("buy pipeline skipped because overseas candidate was not selected");
                 return;
             }
             int attempts = 0;
@@ -1309,7 +1355,7 @@ public class PilotService {
 
         List<Map<String, Object>> candidates = domesticStockCandidateService.findOrderTargetsForCycle();
         if (candidates.isEmpty()) {
-            logger.info("buy pipeline skipped because domestic candidate was not selected");
+            logger.debug("buy pipeline skipped because domestic candidate was not selected");
             return;
         }
         int attempts = 0;
@@ -1337,7 +1383,7 @@ public class PilotService {
             if (!MapUtils.bool(sizingResult, "orderable")) {
                 recordSkippedBuyOrder(candidate, currentPrice, MapUtils.string(sizingResult, "reason"), decisionCycleId, idempotencyKey, validationOrder);
                 insertAuditLog("BUY_SKIPPED", normalizedStockCode, MapUtils.string(sizingResult, "reason"));
-                logger.info("buy skipped. stockCode={}, reason={}", normalizedStockCode, MapUtils.string(sizingResult, "reason"));
+                logger.debug("buy skipped. stockCode={}, reason={}", normalizedStockCode, MapUtils.string(sizingResult, "reason"));
                 if (validationOrder) {
                     overseasStockCandidateService.recordFractionalValidationResult(
                             normalizedStockCode,
@@ -1361,7 +1407,7 @@ public class PilotService {
             if (!MapUtils.bool(safetyResult, "orderAllowed")) {
                 recordBlockedBuyOrder(candidate, currentPrice, sizingResult, MapUtils.string(safetyResult, "reason"), decisionCycleId, idempotencyKey, validationOrder);
                 insertAuditLog("BUY_BLOCKED", normalizedStockCode, MapUtils.string(safetyResult, "reason"));
-                logger.info("buy blocked. stockCode={}, reason={}", normalizedStockCode, MapUtils.string(safetyResult, "reason"));
+                logger.debug("buy blocked. stockCode={}, reason={}", normalizedStockCode, MapUtils.string(safetyResult, "reason"));
                 if (validationOrder) {
                     overseasStockCandidateService.recordFractionalValidationResult(
                             normalizedStockCode,
@@ -1420,7 +1466,7 @@ public class PilotService {
             } else {
                 recordBuyResult(candidate, MapUtils.bool(orderResult, "accepted"), MapUtils.string(orderResult, "message"));
             }
-            logger.info("buy requested. stockCode={}, quantity={}, expectedAmount={}, accepted={}, status={}, message={}",
+            logger.debug("buy requested. stockCode={}, quantity={}, expectedAmount={}, accepted={}, status={}, message={}",
                     normalizedStockCode, MapUtils.decimal(sizingResult, "quantity"), MapUtils.decimal(sizingResult, "expectedAmount"),
                     MapUtils.bool(orderResult, "accepted"), MapUtils.string(orderResult, "status"), MapUtils.string(orderResult, "message"));
     }
@@ -1472,10 +1518,22 @@ public class PilotService {
     }
 
     private BigDecimal orderPrice(Map<String, Object> currentPrice) {
-        if ("OVERSEAS".equalsIgnoreCase(investmentProperties.getMarketType())) {
+        return orderPrice(currentPrice, investmentProperties.getMarketType());
+    }
+
+    private BigDecimal orderPrice(Map<String, Object> currentPrice, String marketType) {
+        if ("OVERSEAS".equalsIgnoreCase(marketType)) {
             return normalizeOverseasOrderPrice(MapUtils.decimal(currentPrice, "price"));
         }
         return BigDecimal.ZERO;
+    }
+
+    private String positionMarketType(Map<String, Object> position) {
+        String marketType = position == null ? null : MapUtils.string(position, "marketType");
+        if ("DOMESTIC".equalsIgnoreCase(marketType) || "OVERSEAS".equalsIgnoreCase(marketType)) {
+            return marketType.toUpperCase(Locale.ROOT);
+        }
+        return investmentProperties.getMarketType();
     }
 
     private BigDecimal normalizeOverseasOrderPrice(BigDecimal price) {
@@ -1639,6 +1697,7 @@ public class PilotService {
                 "lastEvaluatedAt", syncedAt,
                 "flatActive", "N",
                 "accountSyncSource", accountSyncSource,
+                "marketType", investmentProperties.getMarketType(),
                 "lifecycleKey", null,
                 "createdAt", syncedAt,
                 "updatedAt", syncedAt

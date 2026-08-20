@@ -25,6 +25,34 @@
 - 프로그램이 비정상 종료되거나 일시적으로 오류가 발생해도 다음 동기화에서 정상 상태로 복구되는 것을 목표로 합니다.
 - 모든 전략은 WHITE / GRAY / BLACK 상태머신을 기준으로 동작합니다.
 
+### 시장 선택 책임
+
+`investment.market.type`은 **신규 매수 시장을 선택하는 설정**입니다. 후보 생성과 BUY 주문은 이 값을 따릅니다.
+
+매수 이후에는 포지션이 생성될 때 `POSITIONS.MARKET_TYPE`에 시장을 저장합니다. 이후 내부 갱신과 매도는 설정값이 아니라 포지션의 시장을 우선 사용합니다.
+
+```text
+신규 매수
+    │
+    ▼
+investment.market.type
+    │
+    ▼
+국내 또는 해외 후보·BUY
+
+POSITION 생성
+    │
+    ▼
+POSITIONS.MARKET_TYPE
+    │
+    ├── 내부 갱신: 해당 시장의 현재가 조회
+    └── BLACK 매도: 해당 시장의 매도 API 호출
+                         │
+                         └── 값이 없거나 잘못되면 investment.market.type 사용
+```
+
+따라서 `market.type=DOMESTIC`으로 실행 중이어도 `POSITIONS.MARKET_TYPE=OVERSEAS`인 기존 포지션은 해외 현재가 조회와 해외 매도 API를 사용합니다. 시장값이 없는 기존 레거시 포지션은 현재 설정값을 fallback으로 사용합니다.
+
 ## 1. 실행 환경
 
 - Java 17 이상
@@ -284,11 +312,13 @@ runtime:
 
 ### investment.market
 
-- `type`: `DOMESTIC` 또는 `OVERSEAS`
+- `type`: 신규 후보 생성과 BUY 주문에 사용할 시장입니다. `DOMESTIC` 또는 `OVERSEAS`를 사용합니다.
 - `domestic-market-code`: 국내 시장 범위입니다. 기본값은 `ALL`입니다.
 - `overseas-exchange-code`: 해외 주문 거래소 코드입니다.
 - `overseas-price-exchange-code`: 해외 현재가 조회 거래소 코드입니다.
 - `overseas-currency-code`: 해외 거래 통화입니다. 기본값은 `USD`입니다.
+
+내부 갱신과 BLACK 매도는 `POSITIONS.MARKET_TYPE`을 우선 사용합니다. 값이 없거나 유효하지 않은 기존 포지션만 현재 `investment.market.type`으로 fallback합니다. 따라서 설정을 국내로 바꿔도 시장값이 해외로 저장된 기존 포지션은 해외 가격 조회와 해외 매도 API를 사용합니다.
 
 종목코드를 YAML에 직접 입력하지 않습니다. 국내·해외 KIS 종목 마스터를 DB에 적재한 뒤 후보 조건에 맞는 종목을 순환 선택합니다.
 
@@ -551,7 +581,9 @@ CREATE TABLE IF NOT EXISTS POSITIONS (
     /* KIS 정상 보유값 또는 계좌 동기화 대체값의 출처 */
     ACCOUNT_SYNC_SOURCE TEXT,
     /* POSITION, BUY ORDER, SELL ORDER, 이력을 묶는 생애주기 키 */
-    LIFECYCLE_KEY TEXT
+    LIFECYCLE_KEY TEXT,
+    /* 이 포지션의 국내·해외 시장 구분. 내부 갱신과 매도 API 선택에 사용 */
+    MARKET_TYPE TEXT
 );
 
 CREATE TABLE IF NOT EXISTS ORDERS (

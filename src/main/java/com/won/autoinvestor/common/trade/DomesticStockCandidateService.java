@@ -43,7 +43,7 @@ public class DomesticStockCandidateService {
     public List<Map<String, Object>> findOrderTargetsForCycle() {
         String now = now();
         if (!"DOMESTIC".equalsIgnoreCase(investmentProperties.getMarketType())) {
-            logger.info("domestic candidate skipped because market is not domestic");
+            logger.debug("domestic candidate skipped because market is not domestic");
             return List.of();
         }
 
@@ -51,7 +51,7 @@ public class DomesticStockCandidateService {
         int remainingSlots = remainingSlots(usedSlots);
         if (remainingSlots <= 0) {
             mapper.insertAuditLog(MapUtils.map("eventType", "BUY_SKIPPED", "stockCode", null, "details", "MAX_HOLDING_SLOTS_REACHED", "createdAt", now));
-            logger.info("domestic candidate skipped because max holding slots reached. usedSlots={}, maxHoldings={}",
+            logger.debug("domestic candidate skipped because max holding slots reached. usedSlots={}, maxHoldings={}",
                     usedSlots, investmentProperties.getMaxHoldings());
             refreshDashboard(now, usedSlots, 0);
             return List.of();
@@ -61,13 +61,13 @@ public class DomesticStockCandidateService {
         if (orderTargets(selection).isEmpty()) {
             String reason = MapUtils.integer(selection, "buyableCount") == 0 ? "NO_DOMESTIC_BUYABLE_CANDIDATE" : "NO_ELIGIBLE_CANDIDATE_AFTER_EXCLUSIONS";
             mapper.insertAuditLog(MapUtils.map("eventType", "BUY_SKIPPED", "stockCode", null, "details", reason, "createdAt", now));
-            logger.info("domestic candidate not selected. reason={}, buyableCandidates={}", reason, MapUtils.integer(selection, "buyableCount"));
+            logger.debug("domestic candidate not selected. reason={}, buyableCandidates={}", reason, MapUtils.integer(selection, "buyableCount"));
             return List.of();
         }
 
         for (Map<String, Object> candidate : orderTargets(selection)) {
             mapper.domesticTouchCandidateSelected(MapUtils.map("id", MapUtils.longValue(candidate, "id"), "selectedAt", now));
-            logger.info("domestic candidate selected. symbol={}, marketCode={}", MapUtils.string(candidate, "symbol"), MapUtils.string(candidate, "marketCode"));
+            logger.debug("domestic candidate selected. symbol={}, marketCode={}", MapUtils.string(candidate, "symbol"), MapUtils.string(candidate, "marketCode"));
         }
         return orderTargets(selection);
     }
@@ -124,7 +124,7 @@ public class DomesticStockCandidateService {
             mapper.domesticUpsertDashboardRow(toDashboardRow(scoredCandidate, rank++, zone, status, buyable, evaluatedAt));
         }
         mapper.domesticDeleteStaleDashboardRows(MapUtils.map("marketCode", investmentProperties.getDomesticMarketCode(), "evaluatedAt", evaluatedAt));
-        logger.info("domestic dashboard refreshed. evaluated={}, usedSlots={}, remainingSlots={}, active={}, buffer={}, buyable={}",
+        logger.debug("domestic dashboard refreshed. evaluated={}, usedSlots={}, remainingSlots={}, active={}, buffer={}, buyable={}",
                 rows.size(), usedSlots, remainingSlots, activeCount, bufferCount, buyableCount);
         return MapUtils.map("orderTargets", targets, "buyableCount", buyableCount);
     }
@@ -176,6 +176,11 @@ public class DomesticStockCandidateService {
     }
 
     private boolean isUnsupportedInstrument(Map<String, Object> row) {
+        String symbol = MapUtils.string(row, "symbol");
+        // 국내 일반주식/ETF 주문은 KIS 6자리 숫자 종목코드만 허용한다.
+        if (symbol == null || !symbol.matches("\\d{6}")) {
+            return true;
+        }
         if (!investmentProperties.isIncludeEtf() && "Y".equalsIgnoreCase(MapUtils.string(row, "etp"))) {
             return true;
         }
